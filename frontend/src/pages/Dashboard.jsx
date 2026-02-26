@@ -8,7 +8,18 @@ const Dashboard = () => {
   const [interviews, setInterviews] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [showBackendSetup, setShowBackendSetup] = useState(false)
+  const [backendUrl, setBackendUrl] = useState(localStorage.getItem('backendUrl') || '')
   const navigate = useNavigate()
+  
+  // Check if accessed via ngrok
+  useEffect(() => {
+    const isNgrok = window.location.hostname.includes('ngrok') || 
+                    window.location.hostname.includes('loca.lt')
+    if (isNgrok && !localStorage.getItem('backendUrl')) {
+      setShowBackendSetup(true)
+    }
+  }, [])
 
   useEffect(() => {
     if (user) {
@@ -74,6 +85,46 @@ const Dashboard = () => {
       </nav>
 
       <div className="max-w-7xl mx-auto p-8">
+        {/* Backend URL Setup for ngrok */}
+        {showBackendSetup && (
+          <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <h3 className="font-bold text-yellow-800 mb-2">⚠️ Backend URL Required</h3>
+            <p className="text-sm text-yellow-700 mb-3">
+              You're accessing via ngrok. Socket.io needs the backend URL to work.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={backendUrl}
+                onChange={(e) => setBackendUrl(e.target.value)}
+                placeholder="https://interview-backend.loca.lt"
+                className="flex-1 px-3 py-2 border border-yellow-300 rounded text-sm"
+              />
+              <button
+                onClick={() => {
+                  if (backendUrl) {
+                    localStorage.setItem('backendUrl', backendUrl)
+                    setShowBackendSetup(false)
+                    window.location.reload()
+                  }
+                }}
+                className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded text-sm font-semibold"
+              >
+                Save & Reload
+              </button>
+              <button
+                onClick={() => setShowBackendSetup(false)}
+                className="bg-gray-400 hover:bg-gray-500 text-white px-4 py-2 rounded text-sm"
+              >
+                Skip
+              </button>
+            </div>
+            <p className="text-xs text-yellow-600 mt-2">
+              💡 Run <code className="bg-yellow-100 px-1 rounded">lt --port 5000</code> in terminal to get backend URL
+            </p>
+          </div>
+        )}
+
         {user.role === 'interviewer' && (
           <button
             onClick={handleCreateRoom}

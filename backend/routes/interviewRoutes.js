@@ -5,17 +5,21 @@ import Interview from '../models/Interview.js'
 import authMiddleware from '../middleware/authMiddleware.js'
 import { validateCodeUpdate, validateRating } from '../middleware/validationMiddleware.js'
 import memoryStore from '../utils/memoryStore.js'
-import axios from 'axios'
 import Chat from '../models/Chat.js'
 import { runCodeOnJudge0, analyzeInterview } from '../utils/ai.js'
-import { getMongoStatus } from '../config/db.js'
 
 const router = express.Router()
 
+// =========================
+// MongoDB Check
+// =========================
 const isMongoConnected = () => {
   return mongoose.connection.readyState === 1
 }
 
+// =========================
+// Helper to Create Interview Object
+// =========================
 const createInterviewObject = (data) => ({
   _id: data._id || data.roomId,
   roomId: data.roomId,
@@ -32,10 +36,13 @@ const createInterviewObject = (data) => ({
   updatedAt: data.updatedAt || new Date(),
 })
 
-// Create interview room
+// =========================
+// Create Interview Room
+// =========================
 router.post('/create-room', authMiddleware, async (req, res) => {
   try {
     const roomId = nanoid(12)
+
     const interviewData = createInterviewObject({
       roomId,
       interviewer: req.user.userId,
@@ -50,14 +57,20 @@ router.post('/create-room', authMiddleware, async (req, res) => {
       savedInterview = memoryStore.saveInterview(interviewData)
     }
 
-    res.status(201).json({ roomId, interviewId: savedInterview._id })
+    res.status(201).json({
+      roomId,
+      interviewId: savedInterview._id
+    })
+
   } catch (err) {
     console.error('Create room error:', err.message)
     res.status(500).json({ message: 'Failed to create interview room' })
   }
 })
 
-// Get interviews
+// =========================
+// Get All Interviews
+// =========================
 router.get('/', authMiddleware, async (req, res) => {
   try {
     let interviews
@@ -77,13 +90,16 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 
     res.json(interviews)
+
   } catch (err) {
     console.error('Get interviews error:', err.message)
     res.status(500).json({ message: 'Failed to fetch interviews' })
   }
 })
 
-// Get interview by room ID
+// =========================
+// Get Interview By Room ID
+// =========================
 router.get('/room/:roomId', authMiddleware, async (req, res) => {
   try {
     let interview
@@ -101,13 +117,16 @@ router.get('/room/:roomId', authMiddleware, async (req, res) => {
     }
 
     res.json(interview)
+
   } catch (err) {
     console.error('Get interview error:', err.message)
     res.status(500).json({ message: 'Failed to fetch interview' })
   }
 })
 
-// Update code
+// =========================
+// Update Code
+// =========================
 router.put('/:roomId/code', authMiddleware, validateCodeUpdate, async (req, res) => {
   try {
     const { code, language } = req.body
@@ -128,67 +147,116 @@ router.put('/:roomId/code', authMiddleware, validateCodeUpdate, async (req, res)
     }
 
     res.json(interview)
+
   } catch (err) {
     console.error('Update code error:', err.message)
     res.status(500).json({ message: 'Failed to update code' })
   }
 })
 
-// Run code (Judge0)
+// =========================
+// Run Code (Judge0 Multi-Language)
+// =========================
 router.post('/:roomId/run', authMiddleware, async (req, res) => {
   try {
     const { code, language, stdin } = req.body
-    if (!code) return res.status(400).json({ message: 'Code is required' })
 
-    const result = await runCodeOnJudge0(code, language)
-    res.json(result)
+    if (!code) {
+      return res.status(400).json({ message: 'Code is required' })
+    }
+
+    if (!language) {
+      return res.status(400).json({ message: 'Language is required' })
+    }
+
+    const result = await runCodeOnJudge0(code, language, stdin)
+
+    res.json({
+      output:
+        result.stdout ||
+        result.stderr ||
+        result.compile_output ||
+        "No output",
+      status: result.status || "Completed"
+    })
+
   } catch (err) {
     console.error('Run code error:', err.message)
-    res.status(500).json({ message: 'Failed to run code', error: err.message })
+
+    res.status(500).json({
+      message: 'Failed to run code',
+      error: err.message
+    })
   }
 })
 
-// AI analysis endpoint
+// =========================
+// AI Analysis
+// =========================
 router.post('/analyze', authMiddleware, async (req, res) => {
   try {
     const { transcript, code, language } = req.body
-    if (!transcript && !code) return res.status(400).json({ message: 'Transcript or code required' })
+
+    if (!transcript && !code) {
+      return res.status(400).json({
+        message: 'Transcript or code required'
+      })
+    }
 
     const analysis = await analyzeInterview({ transcript, code, language })
+
     res.json({ analysis })
+
   } catch (err) {
     console.error('Analyze error:', err.message)
-    res.status(500).json({ message: 'Failed to analyze interview', error: err.message })
+    res.status(500).json({
+      message: 'Failed to analyze interview',
+      error: err.message
+    })
   }
 })
 
-// Get chat history for room
+// =========================
+// Get Chat History
+// =========================
 router.get('/:roomId/chats', authMiddleware, async (req, res) => {
   try {
     const { roomId } = req.params
     let chats
+
     if (isMongoConnected()) {
       chats = await Chat.find({ roomId }).sort({ createdAt: 1 })
     } else {
       chats = []
     }
+
     res.json(chats)
+
   } catch (err) {
     console.error('Get chats error:', err.message)
     res.status(500).json({ message: 'Failed to fetch chats' })
   }
 })
 
-// Rate interview
+// =========================
+// Rate Interview
+// =========================
 router.post('/:roomId/rate', authMiddleware, validateRating, async (req, res) => {
   try {
-    const { rating, feedback } = req.body
+    const { rating, feedback }
+      = req.body
+
     let interview
 
     if (isMongoConnected()) {
       interview = await Interview.findOneAndUpdate(
         { roomId: req.params.roomId },
-        { rating, feedback, status: 'completed', endTime: new Date() },
+        {
+          rating,
+          feedback,
+          status: 'completed',
+          endTime: new Date(),
+        },
         { new: true }
       )
         .populate('interviewer', 'name email')
@@ -207,6 +275,7 @@ router.post('/:roomId/rate', authMiddleware, validateRating, async (req, res) =>
     }
 
     res.json(interview)
+
   } catch (err) {
     console.error('Rate interview error:', err.message)
     res.status(500).json({ message: 'Failed to rate interview' })

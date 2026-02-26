@@ -6,6 +6,7 @@ import VideoCall from '../components/VideoCall'
 import Timer from '../components/Timer'
 import RatingPanel from '../components/RatingPanel'
 import { socket } from '../utils/socket'
+import API from '../utils/api'
 
 const InterviewRoom = () => {
   const { roomId } = useParams()
@@ -14,26 +15,87 @@ const InterviewRoom = () => {
   const [roomUsers, setRoomUsers] = useState([])
   const [showRating, setShowRating] = useState(false)
   const [showInviteModal, setShowInviteModal] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState({ localhost: false, public: false })
+  const [ngrokUrl, setNgrokUrl] = useState(localStorage.getItem('ngrokUrl') || '')
   const videoCallRef = useRef(null)
   const timerRef = useRef(null)
 
-  // Use public URL from environment or current location
-  const publicUrl = import.meta.env.VITE_PUBLIC_URL || window.location.origin
-  const inviteLink = `${publicUrl}/room/${roomId}`
+  // Invite link: use current page URL so it works when shared (localhost or ngrok)
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : ''
+  const inviteLink = `${currentOrigin}/room/${roomId}`
+  const localhostLink = `http://localhost:5173/room/${roomId}`
+  const publicLink = ngrokUrl ? `${ngrokUrl.replace(/\/$/, '')}/room/${roomId}` : inviteLink
+
+  const [roomError, setRoomError] = useState(null)
+  const [roomLoading, setRoomLoading] = useState(true)
+  const [roomData, setRoomData] = useState(null)
+
+  // Fetch room data first
+  useEffect(() => {
+    const fetchRoom = async () => {
+      if (!user || !roomId) return
+      
+      try {
+        const { data } = await API.get(`/interviews/room/${roomId}`)
+        setRoomData(data)
+        setRoomError(null)
+      } catch (err) {
+        console.error('Failed to fetch room:', err)
+        setRoomError(err.response?.data?.message || 'Room not found or access denied')
+        setRoomLoading(false)
+      }
+    }
+    
+    fetchRoom()
+  }, [roomId, user])
 
   useEffect(() => {
-    socket.emit('join-room', { roomId, userId: user?._id, userName: user?.name })
+    if (!user || !roomId) {
+      setRoomLoading(false)
+      return
+    }
+
+    // Check socket connection
+    if (!socket.connected) {
+      console.log('Socket not connected, attempting to connect...')
+      socket.connect()
+    }
+
+    // Wait for socket to connect before joining room
+    const handleConnect = () => {
+      console.log('Socket connected, joining room...')
+      socket.emit('join-room', { roomId, userId: user._id, userName: user.name })
+      setRoomLoading(false)
+    }
+
+    const handleConnectError = (error) => {
+      console.error('Socket connection error:', error)
+      setRoomError('Failed to connect to server. Please refresh the page.')
+      setRoomLoading(false)
+    }
+
+    socket.on('connect', handleConnect)
+    socket.on('connect_error', handleConnectError)
+
+    // If already connected, join immediately
+    if (socket.connected) {
+      socket.emit('join-room', { roomId, userId: user._id, userName: user.name })
+      setRoomLoading(false)
+    }
 
     socket.on('room-joined', (data) => {
+      console.log('Room joined:', data)
       setRoomUsers(data.users)
+      setRoomError(null)
     })
 
     socket.on('user-joined', (data) => {
+      console.log('User joined:', data)
       setRoomUsers(data.users)
     })
 
     socket.on('user-left', (data) => {
+      console.log('User left:', data)
       setRoomUsers(data.users)
     })
 
@@ -44,6 +106,8 @@ const InterviewRoom = () => {
     })
 
     return () => {
+      socket.off('connect', handleConnect)
+      socket.off('connect_error', handleConnectError)
       socket.off('room-joined')
       socket.off('user-joined')
       socket.off('user-left')
@@ -77,10 +141,43 @@ const InterviewRoom = () => {
     }
   }
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(inviteLink)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const handleCopyLink = (link, type) => {
+    navigator.clipboard.writeText(link)
+    setCopied({ ...copied, [type]: true })
+    setTimeout(() => setCopied({ ...copied, [type]: false }), 2000)
+  }
+
+  const handleSaveNgrokUrl = (url) => {
+    setNgrokUrl(url)
+    localStorage.setItem('ngrokUrl', url)
+  }
+
+  if (roomLoading) {
+    return (
+      <div className="h-screen bg-gray-900 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <p className="text-white">Loading room...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (roomError) {
+    return (
+      <div className="h-screen bg-gray-900 flex items-center justify-center">
+        <div className="bg-red-900 border border-red-700 rounded-lg p-6 max-w-md">
+          <h2 className="text-xl font-bold text-white mb-2">Error</h2>
+          <p className="text-red-200 mb-4">{roomError}</p>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
+          >
+            Go to Dashboard
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -133,43 +230,68 @@ const InterviewRoom = () => {
         </div>
       </div>
 
-      {/* Invite Modal */}
+      {/* Invite Modal - link always matches current URL so it works when shared */}
       {showInviteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full mx-4">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Invite Candidate</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto py-4">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-xl w-full mx-4 my-auto">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">📨 Invite Candidate</h2>
             
-            <p className="text-gray-600 mb-4">
-              Share this link with the candidate to join the interview:
-            </p>
-
-            <div className="bg-gray-100 rounded-lg p-4 mb-4 flex items-center justify-between">
-              <code className="text-sm text-gray-800 break-all flex-1">{inviteLink}</code>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+              <h3 className="font-bold text-green-800 mb-2">🔗 Invite link (works from your current URL)</h3>
+              <p className="text-xs text-green-700 mb-2">
+                Share this link. It uses the same address you have in the browser, so it works for anyone you send it to.
+              </p>
+              <div className="flex gap-2 items-center">
+                <code className="flex-1 bg-white border border-green-300 p-3 rounded text-sm break-all font-mono">{inviteLink}</code>
+                <button
+                  onClick={() => handleCopyLink(inviteLink, 'public')}
+                  className={`px-4 py-2 rounded text-sm font-semibold transition whitespace-nowrap ${
+                    copied.public ? 'bg-green-600 text-white' : 'bg-green-500 hover:bg-green-600 text-white'
+                  }`}
+                >
+                  {copied.public ? '✓ Copied!' : 'Copy Link'}
+                </button>
+              </div>
             </div>
 
-            <button
-              onClick={handleCopyLink}
-              className={`w-full mb-3 py-2 px-4 rounded font-semibold transition ${
-                copied
-                  ? 'bg-green-500 text-white'
-                  : 'bg-blue-500 hover:bg-blue-600 text-white'
-              }`}
-            >
-              {copied ? '✓ Link Copied!' : 'Copy Link'}
-            </button>
+            {/* Optional: custom URL for ngrok if different from current */}
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+              <h3 className="font-bold text-gray-700 mb-2 text-sm">Optional: Different public URL (e.g. ngrok)</h3>
+              <p className="text-xs text-gray-600 mb-2">If you use ngrok, paste that base URL here to show a second link.</p>
+              <div className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={ngrokUrl}
+                  onChange={(e) => handleSaveNgrokUrl(e.target.value)}
+                  placeholder="https://xxxx.ngrok-free.app"
+                  className="flex-1 bg-white border border-gray-300 p-2 rounded text-sm"
+                />
+              </div>
+              {ngrokUrl && (
+                <div className="flex gap-2 items-center mt-2">
+                  <code className="flex-1 bg-white border p-2 rounded text-xs break-all">{publicLink}</code>
+                  <button
+                    onClick={() => handleCopyLink(publicLink, 'localhost')}
+                    className="px-3 py-1 rounded text-sm bg-gray-500 text-white hover:bg-gray-600"
+                  >
+                    Copy
+                  </button>
+                </div>
+              )}
+            </div>
 
-            <div className="pt-4 border-t border-gray-200 mt-4">
-              <p className="text-xs text-gray-500 mb-3">
-                <strong>For Local Network:</strong> Candidate can join directly at the URL above
-              </p>
-              <p className="text-xs text-gray-500">
-                <strong>For Remote Access:</strong> Use ngrok to expose your application and share the ngrok URL
-              </p>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4">
+              <h4 className="font-semibold text-gray-700 text-sm mb-2">📝 Candidate:</h4>
+              <ol className="text-xs text-gray-600 space-y-1 list-decimal list-inside">
+                <li>Open the link you shared</li>
+                <li>Register or Login as <strong>Candidate</strong></li>
+                <li>Allow camera & microphone when asked</li>
+              </ol>
             </div>
 
             <button
               onClick={() => setShowInviteModal(false)}
-              className="w-full mt-4 bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded transition"
+              className="w-full bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded transition"
             >
               Close
             </button>

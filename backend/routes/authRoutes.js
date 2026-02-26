@@ -27,30 +27,35 @@ router.post('/register', async (req, res) => {
     if (!name || !email || !password || !role) {
       return res.status(400).json({ message: 'All fields are required' })
     }
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' })
+    }
 
+    const emailLower = String(email).trim().toLowerCase()
     let userExists
     if (isMongoConnected()) {
-      userExists = await User.findOne({ email })
+      userExists = await User.findOne({ email: emailLower })
     } else {
-      userExists = memoryStore.findUserByEmail(email)
+      userExists = memoryStore.findUserByEmail(emailLower)
     }
 
     if (userExists) {
       return res.status(400).json({ message: 'User already exists' })
     }
 
-    // Hash password
-    const hashedPassword = await bcryptjs.hash(password, 10)
     const userId = `user_${Date.now()}`
 
     let user
     if (isMongoConnected()) {
-      const newUser = new User({ name, email, password: hashedPassword, role })
+      // Don't hash here - User model pre-save hook handles it
+      const newUser = new User({ name, email: emailLower, password, role })
       user = await newUser.save()
     } else {
+      // Hash password for memory store (no model hook)
+      const hashedPassword = await bcryptjs.hash(password, 10)
       user = memoryStore.saveUser(userId, {
         name,
-        email,
+        email: emailLower,
         password: hashedPassword,
         role,
       })
@@ -70,7 +75,17 @@ router.post('/register', async (req, res) => {
     })
   } catch (err) {
     console.error('Register error:', err.message)
-    res.status(500).json({ message: 'Failed to register user' })
+    // Duplicate email (MongoDB unique index)
+    if (err.code === 11000 || err.message?.includes('duplicate key')) {
+      return res.status(400).json({ message: 'User already exists' })
+    }
+    // Validation error
+    if (err.name === 'ValidationError') {
+      return res.status(400).json({ message: err.message || 'Invalid input' })
+    }
+    res.status(500).json({
+      message: err.message || 'Failed to register user',
+    })
   }
 })
 
@@ -84,11 +99,12 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Email and password are required' })
     }
 
+    const emailLower = String(email).trim().toLowerCase()
     let user
     if (isMongoConnected()) {
-      user = await User.findOne({ email })
+      user = await User.findOne({ email: emailLower })
     } else {
-      user = memoryStore.findUserByEmail(email)
+      user = memoryStore.findUserByEmail(emailLower)
     }
 
     if (!user) {

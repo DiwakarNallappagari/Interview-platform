@@ -38,7 +38,8 @@ const Register = () => {
       await register(formData.name, formData.email, formData.password, formData.role)
       navigate('/dashboard')
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed')
+      const msg = err.response?.data?.message || err.message || 'Registration failed'
+      setError(msg)
     } finally {
       setLoading(false)
     }
