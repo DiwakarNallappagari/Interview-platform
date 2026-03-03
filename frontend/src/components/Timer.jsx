@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { socket } from '../utils/socket'
+import  socket  from '../utils/socket'
 
 const Timer = () => {
   const [seconds, setSeconds] = useState(0)

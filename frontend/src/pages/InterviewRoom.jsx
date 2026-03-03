@@ -5,7 +5,7 @@ import CodeEditor from '../components/CodeEditor'
 import VideoCall from '../components/VideoCall'
 import Timer from '../components/Timer'
 import RatingPanel from '../components/RatingPanel'
-import { socket } from '../utils/socket'
+import  socket  from '../utils/socket'
 import API from '../utils/api'
 
 const InterviewRoom = () => {

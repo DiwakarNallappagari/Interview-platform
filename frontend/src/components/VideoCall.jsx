@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
-import { socket } from '../utils/socket'
+import  socket  from '../utils/socket'
 
 const VideoCall = forwardRef(({ roomId }, ref) => {
   const localVideoRef = useRef(null)
