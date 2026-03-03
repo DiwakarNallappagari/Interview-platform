@@ -1,75 +1,78 @@
-import { useEffect, useState } from 'react'
-import Editor from '@monaco-editor/react'
-import { socket } from '../utils/socket'
-import API from '../utils/api'
+import { useEffect, useState } from "react";
+import Editor from "@monaco-editor/react";
+import socket from "../utils/socket";   // ✅ FIXED (default import)
+import API from "../utils/api";
 
 const LANGUAGES = [
-  { value: 'javascript', label: 'JavaScript' },
-  { value: 'python', label: 'Python' },
-  { value: 'java', label: 'Java' },
-  { value: 'cpp', label: 'C++' },
-  { value: 'sql', label: 'SQL' },
-]
+  { value: "javascript", label: "JavaScript" },
+  { value: "python", label: "Python" },
+  { value: "java", label: "Java" },
+  { value: "cpp", label: "C++" },
+  { value: "sql", label: "SQL" },
+];
 
 const CodeEditor = ({ roomId }) => {
-  const [code, setCode] = useState('// Start coding here...\n')
-  const [language, setLanguage] = useState('javascript')
-  const [output, setOutput] = useState(null)
-  const [running, setRunning] = useState(false)
-  const [stdin, setStdin] = useState('')
+  const [code, setCode] = useState("// Start coding here...\n");
+  const [language, setLanguage] = useState("javascript");
+  const [output, setOutput] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [stdin, setStdin] = useState("");
 
   useEffect(() => {
-    socket.on('receive-code', (data) => {
-      setCode(data.code)
-    })
+    // Receive code updates
+    socket.on("receive-code", (data) => {
+      setCode(data.code);
+    });
 
-    socket.on('language-change', (data) => {
-      setLanguage(data.language)
-    })
+    // Receive language change
+    socket.on("language-change", (data) => {
+      setLanguage(data.language);
+    });
 
     return () => {
-      socket.off('receive-code')
-      socket.off('language-change')
-    }
-  }, [])
+      socket.off("receive-code");
+      socket.off("language-change");
+    };
+  }, []);
 
   const handleCodeChange = (value) => {
-    setCode(value)
-    socket.emit('code-change', {
+    setCode(value || "");
+    socket.emit("code-change", {
       roomId,
       code: value,
-    })
-  }
+    });
+  };
 
   const handleLanguageChange = (e) => {
-    const newLanguage = e.target.value
-    setLanguage(newLanguage)
-    socket.emit('language-change', {
+    const newLanguage = e.target.value;
+    setLanguage(newLanguage);
+
+    socket.emit("language-change", {
       roomId,
       language: newLanguage,
-    })
-  }
+    });
+  };
 
   const handleRunCode = async () => {
-    setRunning(true)
-    setOutput(null)
+    setRunning(true);
+    setOutput(null);
 
     try {
       const resp = await API.post(`/interviews/${roomId}/run`, {
         code,
         language,
         stdin,
-      })
+      });
 
-      setOutput(resp.data)
+      setOutput(resp.data);
     } catch (err) {
       setOutput({
         error: err.response?.data?.message || err.message,
-      })
+      });
     } finally {
-      setRunning(false)
+      setRunning(false);
     }
-  }
+  };
 
   return (
     <div className="bg-gray-800 rounded-lg overflow-hidden flex flex-col h-full">
@@ -93,10 +96,10 @@ const CodeEditor = ({ roomId }) => {
 
           <button
             onClick={handleRunCode}
-            className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600"
+            className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600 disabled:opacity-50"
             disabled={running}
           >
-            {running ? 'Running...' : 'Run'}
+            {running ? "Running..." : "Run"}
           </button>
         </div>
       </div>
@@ -152,7 +155,7 @@ const CodeEditor = ({ roomId }) => {
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default CodeEditor
+export default CodeEditor;
