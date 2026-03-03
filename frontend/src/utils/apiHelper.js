@@ -15,10 +15,9 @@ export const interviewAPI = {
       console.log(`🗑️ Deleting interview: ${roomId}`)
 
       const response = await API.delete(
-        `/api/interviews/${roomId}`
+        `/interviews/${roomId}`   // ✅ NO /api here
       )
 
-      console.log('✅ Interview deleted successfully')
       return response.data
 
     } catch (error) {
@@ -41,10 +40,9 @@ export const interviewAPI = {
       console.log(`✅ Completing interview: ${roomId}`)
 
       const response = await API.patch(
-        `/api/interviews/${roomId}/complete`
+        `/interviews/${roomId}/complete`   // ✅ NO /api here
       )
 
-      console.log('✅ Interview completed successfully')
       return response.data
 
     } catch (error) {
@@ -62,9 +60,8 @@ export const interviewAPI = {
     try {
       console.log('📋 Fetching all interviews')
 
-      const response = await API.get('/api/interviews')
+      const response = await API.get('/interviews')  // ✅ NO /api here
 
-      console.log('✅ Interviews fetched successfully')
       return response.data
 
     } catch (error) {
