@@ -4,6 +4,7 @@ import { AuthContext } from '../context/AuthContext'
 import API from '../utils/api'
 
 const CreateRoom = () => {
+  const [candidateEmail, setCandidateEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const { user } = useContext(AuthContext)
@@ -14,7 +15,16 @@ const CreateRoom = () => {
     setError('')
 
     try {
-      const { data } = await API.post('/interviews/create-room')
+      if (!candidateEmail) {
+        setError('Candidate email is required')
+        setLoading(false)
+        return
+      }
+
+      const { data } = await API.post('/interviews/create-room', {
+        candidateEmail   // ✅ IMPORTANT
+      })
+
       navigate(`/room/${data.roomId}`)
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to create room')
@@ -30,7 +40,7 @@ const CreateRoom = () => {
         </h2>
         
         <p className="text-gray-600 mb-6 text-center">
-          As an interviewer, click below to create a new interview room. You will receive a room ID and link to share with the candidate.
+          Enter candidate email and create interview room.
         </p>
 
         {error && (
@@ -39,11 +49,20 @@ const CreateRoom = () => {
           </div>
         )}
 
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
           <p className="text-sm text-blue-700">
             <span className="font-semibold">Your Role:</span> {user?.role}
           </p>
         </div>
+
+        {/* ✅ NEW EMAIL INPUT */}
+        <input
+          type="email"
+          placeholder="Enter Candidate Email"
+          value={candidateEmail}
+          onChange={(e) => setCandidateEmail(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg p-3 mb-4 focus:outline-none focus:ring-2 focus:ring-green-400"
+        />
 
         <button
           onClick={handleCreateRoom}
