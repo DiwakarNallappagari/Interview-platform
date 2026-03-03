@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API = axios.create({
-  baseURL: 'http://localhost:5000/api',
+  baseURL: 'https://interview-platform-7r64.onrender.com',
   headers: {
     "Content-Type": "application/json",
   },
