@@ -56,6 +56,16 @@ const memoryStore = {
     return null
   },
 
+  deleteInterview(roomId) {
+    for (const [key, interview] of this.interviews.entries()) {
+      if (interview.roomId === roomId) {
+        this.interviews.delete(key)
+        return true
+      }
+    }
+    return false
+  },
+
   findAllInterviews() {
     return Array.from(this.interviews.values()).map(i => ({ ...i }))
   },

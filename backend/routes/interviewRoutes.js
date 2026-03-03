@@ -125,6 +125,50 @@ router.get('/room/:roomId', authMiddleware, async (req, res) => {
 })
 
 // =========================
+// Delete Interview Room
+// =========================
+router.delete('/:roomId', authMiddleware, async (req, res) => {
+  try {
+    const { roomId } = req.params
+    console.log('🗑️ Delete request received for roomId:', roomId)
+    console.log('📋 Request params:', req.params)
+    console.log('📋 Request URL:', req.originalUrl)
+    
+    if (!roomId) {
+      console.log('❌ No roomId provided in request')
+      return res.status(400).json({ message: 'Room ID is required' })
+    }
+    
+    if (isMongoConnected()) {
+      console.log('🔍 Attempting MongoDB delete for roomId:', roomId)
+      const interview = await Interview.findOneAndDelete({ roomId })
+      
+      if (!interview) {
+        console.log('❌ Interview not found in MongoDB for roomId:', roomId)
+        return res.status(404).json({ message: 'Interview not found' })
+      }
+      
+      console.log('✅ Interview deleted successfully from MongoDB:', roomId)
+      res.json({ message: 'Interview deleted successfully' })
+    } else {
+      console.log('🔍 Attempting memory store delete for roomId:', roomId)
+      const deleted = memoryStore.deleteInterview(roomId)
+      
+      if (!deleted) {
+        console.log('❌ Interview not found in memory store for roomId:', roomId)
+        return res.status(404).json({ message: 'Interview not found' })
+      }
+      
+      console.log('✅ Interview deleted successfully from memory store:', roomId)
+      res.json({ message: 'Interview deleted successfully' })
+    }
+  } catch (err) {
+    console.error('❌ Delete interview error:', err.message)
+    res.status(500).json({ message: 'Failed to delete interview' })
+  }
+})
+
+// =========================
 // Update Code
 // =========================
 router.put('/:roomId/code', authMiddleware, validateCodeUpdate, async (req, res) => {
@@ -279,6 +323,46 @@ router.post('/:roomId/rate', authMiddleware, validateRating, async (req, res) =>
   } catch (err) {
     console.error('Rate interview error:', err.message)
     res.status(500).json({ message: 'Failed to rate interview' })
+  }
+})
+
+// Complete interview route
+router.patch('/:roomId/complete', authMiddleware, async (req, res) => {
+  try {
+    const { roomId } = req.params
+    
+    if (isMongoConnected()) {
+      const interview = await Interview.findOneAndUpdate(
+        { roomId },
+        { 
+          status: 'completed',
+          endTime: new Date(),
+        },
+        { new: true }
+      )
+        .populate('interviewer', 'name email')
+        .populate('candidate', 'name email')
+      
+      if (!interview) {
+        return res.status(404).json({ message: 'Interview not found' })
+      }
+      
+      res.json(interview)
+    } else {
+      const interview = memoryStore.updateInterview(roomId, {
+        status: 'completed',
+        endTime: new Date(),
+      })
+      
+      if (!interview) {
+        return res.status(404).json({ message: 'Interview not found' })
+      }
+      
+      res.json(interview)
+    }
+  } catch (err) {
+    console.error('Complete interview error:', err.message)
+    res.status(500).json({ message: 'Failed to complete interview' })
   }
 })
 

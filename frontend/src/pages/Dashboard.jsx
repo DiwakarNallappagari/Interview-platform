@@ -1,7 +1,12 @@
 import { useState, useEffect, useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AuthContext } from '../context/AuthContext'
-import API from '../utils/api'
+import interviewAPI from '../utils/apiHelper'
+import CodeEditor from '../components/CodeEditor'
+import VideoCall from '../components/VideoCall'
+import Timer from '../components/Timer'
+import RatingPanel from '../components/RatingPanel'
+import socket  from '../utils/socket'
 
 const Dashboard = () => {
   const { user, logout } = useContext(AuthContext)
@@ -30,15 +35,35 @@ const Dashboard = () => {
   const fetchInterviews = async () => {
     try {
       setLoading(true)
-      const { data } = await API.get('/interviews')
-      setInterviews(Array.isArray(data) ? data : [])
       setError(null)
+      const interviews = await interviewAPI.getInterviews()
+      setInterviews(Array.isArray(interviews) ? interviews : [])
     } catch (err) {
       console.error('Failed to fetch interviews:', err)
       setInterviews([])
       setError('Failed to load interviews')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDeleteRoom = async (roomId) => {
+    try {
+      await interviewAPI.deleteInterview(roomId)
+      await fetchInterviews()
+    } catch (err) {
+      console.error('Delete error:', err.message)
+      alert(`Failed to delete interview: ${err.message}`)
+    }
+  }
+
+  const handleCompleteInterview = async (roomId) => {
+    try {
+      await interviewAPI.completeInterview(roomId)
+      await fetchInterviews()
+    } catch (err) {
+      console.error('Complete error:', err.message)
+      alert(`Failed to complete interview: ${err.message}`)
     }
   }
 
@@ -164,16 +189,38 @@ const Dashboard = () => {
                   {interview.createdAt ? new Date(interview.createdAt).toLocaleDateString() : 'No date'}
                 </p>
                 {interview.status === 'active' && (
-                  <button
-                    onClick={() => handleJoinRoom(interview.roomId)}
-                    className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded transition"
-                  >
-                    Join
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleJoinRoom(interview.roomId)}
+                      className="flex-1 bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded transition"
+                    >
+                      Join
+                    </button>
+                    <button
+                      onClick={() => handleCompleteInterview(interview.roomId)}
+                      className="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded transition"
+                    >
+                      Complete
+                    </button>
+                    <button
+                      onClick={() => handleDeleteRoom(interview.roomId)}
+                      className="flex-1 bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded transition"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 )}
                 {interview.status === 'completed' && (
-                  <div className="text-center text-green-600 font-semibold">
-                    Completed - Rating: {interview.rating || 'N/A'}
+                  <div className="flex gap-2">
+                    <div className="flex-1 text-center text-green-600 font-semibold">
+                      Completed - Rating: {interview.rating || 'N/A'}
+                    </div>
+                    <button
+                      onClick={() => handleDeleteRoom(interview.roomId)}
+                      className="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded transition"
+                    >
+                      Delete
+                    </button>
                   </div>
                 )}
               </div>
