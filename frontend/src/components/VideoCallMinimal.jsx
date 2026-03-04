@@ -4,22 +4,31 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [micOn, setMicOn] = useState(false);
+  const [remoteStream, setRemoteStream] = useState(null);
 
   useImperativeHandle(ref, () => ({
     stopConnection: () => {
+
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
       }
+
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+      }
+
     }
   }));
 
+
   useEffect(() => {
 
-    const startCamera = async () => {
+    const startMedia = async () => {
 
       try {
 
@@ -38,16 +47,39 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           await video.play();
         }
 
-        // Start with tracks OFF to match expected behavior
-        stream.getVideoTracks().forEach(track => {
-          track.enabled = false;
-        });
-        stream.getAudioTracks().forEach(track => {
-          track.enabled = false;
-        });
+        // Start tracks OFF
+        stream.getVideoTracks().forEach(track => track.enabled = false);
+        stream.getAudioTracks().forEach(track => track.enabled = false);
 
         setCameraOn(false);
         setMicOn(false);
+
+        // Create peer connection
+        const peerConnection = new RTCPeerConnection({
+          iceServers: [
+            { urls: "stun:stun.l.google.com:19302" }
+          ]
+        });
+
+        peerConnectionRef.current = peerConnection;
+
+        // Add tracks
+        stream.getTracks().forEach(track => {
+          peerConnection.addTrack(track, stream);
+        });
+
+        // Receive remote stream
+        peerConnection.ontrack = (event) => {
+
+          const stream = event.streams[0];
+
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = stream;
+            remoteVideoRef.current.play().catch(()=>{});
+          }
+
+          setRemoteStream(stream);
+        };
 
       } catch (err) {
         console.error("Camera error:", err);
@@ -55,9 +87,10 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
     };
 
-    startCamera();
+    startMedia();
 
   }, []);
+
 
   const toggleCamera = () => {
 
@@ -71,6 +104,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
   };
 
+
   const toggleMic = () => {
 
     if (!localStreamRef.current) return;
@@ -83,14 +117,28 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
   };
 
+
   return (
 
     <div className="bg-black flex flex-col h-full">
 
-      {/* MAIN VIDEO AREA */}
       <div className="flex-1 relative">
 
-        {/* LOCAL VIDEO */}
+        {/* Remote video */}
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className="w-full h-full object-cover"
+        />
+
+        {!remoteStream && (
+          <div className="absolute inset-0 flex items-center justify-center text-white">
+            Waiting for other participant...
+          </div>
+        )}
+
+        {/* Local video */}
         <video
           ref={localVideoRef}
           autoPlay
@@ -106,13 +154,8 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           }}
         />
 
-        <div className="flex items-center justify-center h-full text-white">
-          Waiting for other participant...
-        </div>
-
       </div>
 
-      {/* CONTROLS */}
       <div className="bg-gray-800 p-4 flex gap-4 justify-center">
 
         <button
@@ -132,6 +175,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       </div>
 
     </div>
+
   );
 
 });
