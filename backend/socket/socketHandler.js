@@ -4,22 +4,23 @@ import Chat from '../models/Chat.js'
 export const initializeSocketHandlers = (io) => {
 
   io.on('connection', (socket) => {
+
     console.log('New user connected:', socket.id)
+
 
     // ==============================
     // JOIN ROOM
     // ==============================
     socket.on('join-room', async (data) => {
+
       try {
 
         const { roomId, userId, userName } = data
 
         socket.join(roomId)
 
-        // store user data
         socket.data = { userId, userName, roomId }
 
-        // update interview candidate if needed
         const interview = await Interview.findOne({ roomId })
 
         if (interview && !interview.candidate && userId !== interview.interviewer.toString()) {
@@ -27,14 +28,12 @@ export const initializeSocketHandlers = (io) => {
           await interview.save()
         }
 
-        // notify others that user joined (IMPORTANT for WebRTC)
         socket.to(roomId).emit('user-joined', {
           socketId: socket.id,
           userId,
           userName
         })
 
-        // get users in room
         const roomSockets = io.sockets.adapter.rooms.get(roomId)
 
         const users = Array.from(roomSockets || []).map((socketId) => {
@@ -44,7 +43,7 @@ export const initializeSocketHandlers = (io) => {
           return {
             socketId,
             userId: socketObj?.data?.userId,
-            userName: socketObj?.data?.userName,
+            userName: socketObj?.data?.userName
           }
 
         })
@@ -57,15 +56,14 @@ export const initializeSocketHandlers = (io) => {
       } catch (err) {
         console.error('Join room error:', err)
       }
+
     })
 
 
     // ==============================
     // CODE COLLABORATION
     // ==============================
-    socket.on('code-change', (data) => {
-
-      const { roomId, code } = data
+    socket.on('code-change', ({ roomId, code }) => {
 
       socket.to(roomId).emit('receive-code', {
         code,
@@ -78,9 +76,7 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // CURSOR UPDATE
     // ==============================
-    socket.on('cursor-update', (data) => {
-
-      const { roomId, cursor } = data
+    socket.on('cursor-update', ({ roomId, cursor }) => {
 
       socket.to(roomId).emit('cursor-update', {
         socketId: socket.id,
@@ -94,9 +90,7 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // TYPING INDICATOR
     // ==============================
-    socket.on('typing', (data) => {
-
-      const { roomId, typing } = data
+    socket.on('typing', ({ roomId, typing }) => {
 
       socket.to(roomId).emit('typing', {
         socketId: socket.id,
@@ -108,13 +102,11 @@ export const initializeSocketHandlers = (io) => {
 
 
     // ==============================
-    // CHAT MESSAGES
+    // CHAT MESSAGE
     // ==============================
-    socket.on('chat-message', async (data) => {
+    socket.on('chat-message', async ({ roomId, message }) => {
 
       try {
-
-        const { roomId, message } = data
 
         const chatObj = {
           roomId,
@@ -142,9 +134,7 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // LANGUAGE CHANGE
     // ==============================
-    socket.on('language-change', (data) => {
-
-      const { roomId, language } = data
+    socket.on('language-change', ({ roomId, language }) => {
 
       socket.to(roomId).emit('language-change', { language })
 
@@ -154,14 +144,9 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // WEBRTC OFFER
     // ==============================
-    socket.on('offer', (data) => {
+    socket.on('offer', ({ roomId, offer }) => {
 
-      const { roomId, offer } = data
-
-      socket.to(roomId).emit('offer', {
-        offer,
-        socketId: socket.id
-      })
+      socket.to(roomId).emit('offer', { offer })
 
     })
 
@@ -169,14 +154,9 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // WEBRTC ANSWER
     // ==============================
-    socket.on('answer', (data) => {
+    socket.on('answer', ({ roomId, answer }) => {
 
-      const { roomId, answer } = data
-
-      socket.to(roomId).emit('answer', {
-        answer,
-        socketId: socket.id
-      })
+      socket.to(roomId).emit('answer', { answer })
 
     })
 
@@ -184,14 +164,9 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // ICE CANDIDATE
     // ==============================
-    socket.on('ice-candidate', (data) => {
+    socket.on('ice-candidate', ({ roomId, candidate }) => {
 
-      const { roomId, candidate } = data
-
-      socket.to(roomId).emit('ice-candidate', {
-        candidate,
-        socketId: socket.id
-      })
+      socket.to(roomId).emit('ice-candidate', { candidate })
 
     })
 
@@ -199,11 +174,9 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // END INTERVIEW
     // ==============================
-    socket.on('end-interview', async (data) => {
+    socket.on('end-interview', async ({ roomId }) => {
 
       try {
-
-        const { roomId } = data
 
         await Interview.findOneAndUpdate(
           { roomId },
