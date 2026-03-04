@@ -1,7 +1,7 @@
 import { useState, useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AuthContext } from '../context/AuthContext'
-import API from '../utils/api'
+import interviewAPI from '../utils/apiHelper'
 
 const CreateRoom = () => {
   const [candidateEmail, setCandidateEmail] = useState('')
@@ -21,13 +21,13 @@ const CreateRoom = () => {
         return
       }
 
-      const { data } = await API.post('/interviews/create-room', {
-        candidateEmail   // ✅ IMPORTANT
+      const data = await interviewAPI.createRoom({
+        candidateEmail
       })
 
       navigate(`/room/${data.roomId}`)
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to create room')
+      setError(err.message || 'Failed to create room')
       setLoading(false)
     }
   }

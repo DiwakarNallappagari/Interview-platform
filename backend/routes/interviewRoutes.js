@@ -2,12 +2,12 @@ import express from "express";
 import { nanoid } from "nanoid";
 import mongoose from "mongoose";
 import Interview from "../models/Interview.js";
-import User from "../models/User.js"; // ✅ IMPORTANT
+import User from "../models/User.js";
 import authMiddleware from "../middleware/authMiddleware.js";
 import { validateCodeUpdate, validateRating } from "../middleware/validationMiddleware.js";
 import memoryStore from "../utils/memoryStore.js";
 import Chat from "../models/Chat.js";
-import { runCodeOnJudge0, analyzeInterview } from "../utils/ai.js";
+import { runCodeOnJudge0 } from "../utils/ai.js";
 
 const router = express.Router();
 
@@ -24,7 +24,7 @@ const isMongoConnected = () => {
 const createInterviewObject = (data) => ({
   roomId: data.roomId,
   interviewer: data.interviewer,
-  candidate: data.candidate, // ✅ MUST NOT BE NULL
+  candidate: data.candidate,
   code: data.code || "// Start coding here...\n",
   language: data.language || "javascript",
   status: data.status || "active",
@@ -58,7 +58,7 @@ router.post("/create-room", authMiddleware, async (req, res) => {
     const interviewData = createInterviewObject({
       roomId,
       interviewer: req.user.userId,
-      candidate: candidateUser._id, // ✅ FIXED
+      candidate: candidateUser._id,
       language,
     });
 
@@ -75,6 +75,7 @@ router.post("/create-room", authMiddleware, async (req, res) => {
       roomId,
       interviewId: savedInterview._id,
     });
+
   } catch (err) {
     console.error("Create room error:", err);
     res.status(500).json({ message: "Failed to create interview room" });
@@ -103,6 +104,7 @@ router.get("/", authMiddleware, async (req, res) => {
     }
 
     res.json(interviews);
+
   } catch (err) {
     console.error("Get interviews error:", err);
     res.status(500).json({ message: "Failed to fetch interviews" });
@@ -129,6 +131,7 @@ router.get("/room/:roomId", authMiddleware, async (req, res) => {
     }
 
     res.json(interview);
+
   } catch (err) {
     console.error("Get interview error:", err);
     res.status(500).json({ message: "Failed to fetch interview" });
@@ -147,7 +150,7 @@ router.put("/:roomId/code", authMiddleware, validateCodeUpdate, async (req, res)
     if (isMongoConnected()) {
       interview = await Interview.findOneAndUpdate(
         { roomId: req.params.roomId },
-        { code, language },
+        { code, language, updatedAt: new Date() },
         { new: true }
       );
     } else {
@@ -159,6 +162,7 @@ router.put("/:roomId/code", authMiddleware, validateCodeUpdate, async (req, res)
     }
 
     res.json(interview);
+
   } catch (err) {
     console.error("Update code error:", err);
     res.status(500).json({ message: "Failed to update code" });
@@ -182,6 +186,7 @@ router.post("/:roomId/run", authMiddleware, async (req, res) => {
         "No output",
       status: result.status || "Completed",
     });
+
   } catch (err) {
     console.error("Run code error:", err);
     res.status(500).json({ message: "Failed to run code" });
@@ -213,9 +218,39 @@ router.post("/:roomId/rate", authMiddleware, validateRating, async (req, res) =>
     }
 
     res.json(interview);
+
   } catch (err) {
     console.error("Rate interview error:", err);
     res.status(500).json({ message: "Failed to rate interview" });
+  }
+});
+
+// =========================
+// Delete Interview
+// =========================
+router.delete("/:roomId", authMiddleware, async (req, res) => {
+  try {
+    const { roomId } = req.params;
+
+    let deletedInterview;
+
+    if (isMongoConnected()) {
+      deletedInterview = await Interview.findOneAndDelete({ roomId });
+    } else {
+      deletedInterview = memoryStore.deleteInterview(roomId);
+    }
+
+    if (!deletedInterview) {
+      return res.status(404).json({ message: "Interview not found" });
+    }
+
+    res.json({
+      message: "Interview deleted successfully",
+    });
+
+  } catch (err) {
+    console.error("Delete interview error:", err);
+    res.status(500).json({ message: "Failed to delete interview" });
   }
 });
 

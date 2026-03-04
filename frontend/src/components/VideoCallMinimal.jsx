@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
-import  socket  from '../utils/socket'
 
-const VideoCall = forwardRef(({ roomId }, ref) => {
+const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
   const localVideoRef = useRef(null)
   const remoteVideoRef = useRef(null)
   const peerConnectionRef = useRef(null)
@@ -25,35 +24,48 @@ const VideoCall = forwardRef(({ roomId }, ref) => {
   useEffect(() => {
     const startMedia = async () => {
       try {
-        console.log('Requesting media devices...')
+        console.log('🎥 Requesting media devices...')
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: true,
         })
 
-        console.log('Media stream obtained:', stream)
-        console.log('Video tracks:', stream.getVideoTracks().length)
-        console.log('Audio tracks:', stream.getAudioTracks().length)
-
+        console.log('✅ Media stream obtained:', stream)
         localStreamRef.current = stream
 
-        // Set initial track states to match UI
+        // Set tracks to OFF initially
         stream.getVideoTracks().forEach(track => {
-          track.enabled = cameraOn
-          console.log('Initial video track state:', track.enabled)
+          track.enabled = false
         })
         stream.getAudioTracks().forEach(track => {
-          track.enabled = micOn
-          console.log('Initial audio track state:', track.enabled)
+          track.enabled = false
         })
 
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream
         }
 
-        initializePeerConnection(stream)
+        // Simple peer connection setup
+        const peerConnection = new RTCPeerConnection({
+          iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }],
+        })
+
+        peerConnectionRef.current = peerConnection
+
+        stream.getTracks().forEach((track) => {
+          peerConnection.addTrack(track, stream)
+        })
+
+        peerConnection.ontrack = (evt) => {
+          setRemoteStream(evt.streams[0])
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = evt.streams[0]
+          }
+        }
+
+        console.log('✅ Peer connection initialized')
       } catch (err) {
-        console.error('Error accessing media devices:', err)
+        console.error('❌ Error accessing media devices:', err)
       }
     }
 
@@ -70,126 +82,39 @@ const VideoCall = forwardRef(({ roomId }, ref) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const initializePeerConnection = async (stream) => {
-    const peerConnection = new RTCPeerConnection({
-      iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }],
-    })
-
-    peerConnectionRef.current = peerConnection
-
-    stream.getTracks().forEach((track) => {
-      peerConnection.addTrack(track, stream)
-    })
-
-    peerConnection.ontrack = (evt) => {
-      setRemoteStream(evt.streams[0])
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = evt.streams[0]
-      }
-    }
-
-    peerConnection.onicecandidate = (evt) => {
-      if (evt.candidate) {
-        socket.emit('ice-candidate', { roomId, candidate: evt.candidate })
-      }
-    }
-
-    socket.on('offer', async (data) => {
-      await peerConnection.setRemoteDescription(
-        new RTCSessionDescription(data.offer)
-      )
-      const answer = await peerConnection.createAnswer()
-      await peerConnection.setLocalDescription(answer)
-      socket.emit('answer', { roomId, answer })
-    })
-
-    socket.on('answer', async (data) => {
-      await peerConnection.setRemoteDescription(
-        new RTCSessionDescription(data.answer)
-      )
-    })
-
-    socket.on('ice-candidate', async (data) => {
-      try {
-        await peerConnection.addIceCandidate(
-          new RTCIceCandidate(data.candidate)
-        )
-      } catch (err) {
-        console.error('Error adding ICE candidate:', err)
-      }
-    })
-
-    const offer = await peerConnection.createOffer()
-    await peerConnection.setLocalDescription(offer)
-    socket.emit('offer', { roomId, offer })
-  }
-
-  // Camera Toggle Function
+  // Simple toggle functions
   const toggleCamera = () => {
-    if (!localStreamRef.current) {
-      console.error('No local stream available')
-      return
+    const newState = !cameraOn
+    console.log(`🎥 Camera toggle: ${cameraOn} -> ${newState}`)
+    
+    if (localStreamRef.current) {
+      const videoTracks = localStreamRef.current.getVideoTracks()
+      videoTracks.forEach(track => {
+        track.enabled = newState
+      })
     }
-
-    const videoTracks = localStreamRef.current.getVideoTracks()
-    if (videoTracks.length === 0) {
-      console.error('No video tracks found')
-      return
-    }
-
-    // Get current track state
-    const currentTrackState = videoTracks[0].enabled
-    const newTrackState = !currentTrackState
     
-    console.log(`Camera toggle: ${currentTrackState} -> ${newTrackState}`)
-    
-    // Toggle track enabled state
-    videoTracks.forEach(track => {
-      track.enabled = newTrackState
-    })
-    
-    // Update React state to match track state
-    setCameraOn(newTrackState)
-    
-    console.log('Camera is now:', newTrackState ? 'ON' : 'OFF')
+    setCameraOn(newState)
   }
 
-  // Microphone Toggle Function
   const toggleMic = () => {
-    if (!localStreamRef.current) {
-      console.error('No local stream available')
-      return
+    const newState = !micOn
+    console.log(`🎤 Mic toggle: ${micOn} -> ${newState}`)
+    
+    if (localStreamRef.current) {
+      const audioTracks = localStreamRef.current.getAudioTracks()
+      audioTracks.forEach(track => {
+        track.enabled = newState
+      })
     }
-
-    const audioTracks = localStreamRef.current.getAudioTracks()
-    if (audioTracks.length === 0) {
-      console.error('No audio tracks found')
-      return
-    }
-
-    // Get current track state
-    const currentTrackState = audioTracks[0].enabled
-    const newTrackState = !currentTrackState
     
-    console.log(`Mic toggle: ${currentTrackState} -> ${newTrackState}`)
-    
-    // Toggle track enabled state
-    audioTracks.forEach(track => {
-      track.enabled = newTrackState
-    })
-    
-    // Update React state to match track state
-    setMicOn(newTrackState)
-    
-    console.log('Microphone is now:', newTrackState ? 'ON' : 'OFF')
+    setMicOn(newState)
   }
 
   return (
     <div className="bg-black rounded-lg overflow-hidden flex-1 flex flex-col">
-      
       {/* Video Section */}
       <div className="relative w-full h-full flex">
-        
         {/* Remote Video */}
         <div className="w-full h-full">
           <video
@@ -227,7 +152,6 @@ const VideoCall = forwardRef(({ roomId }, ref) => {
 
       {/* Control Buttons */}
       <div className="bg-gray-800 p-4 flex justify-center gap-6">
-
         {/* Camera Button */}
         <button
           type="button"
@@ -253,12 +177,11 @@ const VideoCall = forwardRef(({ roomId }, ref) => {
         >
           {micOn ? '🎤 Mic On' : '🔇 Mic Off'}
         </button>
-
       </div>
     </div>
   )
 })
 
-VideoCall.displayName = 'VideoCall'
+VideoCallMinimal.displayName = 'VideoCallMinimal'
 
-export default VideoCall
+export default VideoCallMinimal

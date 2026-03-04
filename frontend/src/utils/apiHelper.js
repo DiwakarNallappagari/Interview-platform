@@ -1,7 +1,39 @@
 import API from './api'
 
-// Helper functions for interview operations
-export const interviewAPI = {
+// ==============================
+// Interview API Helper
+// ==============================
+
+const interviewAPI = {
+
+  // =========================
+  // Create Interview Room
+  // =========================
+  createRoom: async (roomData) => {
+    if (!roomData) {
+      throw new Error('Room data is required')
+    }
+
+    try {
+      console.log('🏢 Creating interview room:', roomData)
+
+      const response = await API.post('/interviews/create-room', roomData)
+
+      console.log('✅ Interview room created successfully')
+
+      return response.data
+
+    } catch (error) {
+      console.error(
+        '❌ Create room error:',
+        error.response?.data || error.message
+      )
+
+      throw new Error(
+        error.response?.data?.message || 'Failed to create room'
+      )
+    }
+  },
 
   // =========================
   // Delete Interview
@@ -14,14 +46,18 @@ export const interviewAPI = {
     try {
       console.log(`🗑️ Deleting interview: ${roomId}`)
 
-      const response = await API.delete(
-        `/interviews/${roomId}`   // ✅ NO /api here
-      )
+      const response = await API.delete(`/interviews/${roomId}`)
+
+      console.log('✅ Interview deleted successfully')
 
       return response.data
 
     } catch (error) {
-      console.error('❌ Delete interview error:', error.response?.data || error.message)
+      console.error(
+        '❌ Delete interview error:',
+        error.response?.data || error.message
+      )
+
       throw new Error(
         error.response?.data?.message || 'Failed to delete interview'
       )
@@ -39,14 +75,18 @@ export const interviewAPI = {
     try {
       console.log(`✅ Completing interview: ${roomId}`)
 
-      const response = await API.patch(
-        `/interviews/${roomId}/complete`   // ✅ NO /api here
-      )
+      const response = await API.patch(`/interviews/${roomId}/complete`)
+
+      console.log('🎉 Interview completed')
 
       return response.data
 
     } catch (error) {
-      console.error('❌ Complete interview error:', error.response?.data || error.message)
+      console.error(
+        '❌ Complete interview error:',
+        error.response?.data || error.message
+      )
+
       throw new Error(
         error.response?.data?.message || 'Failed to complete interview'
       )
@@ -60,12 +100,16 @@ export const interviewAPI = {
     try {
       console.log('📋 Fetching all interviews')
 
-      const response = await API.get('/interviews')  // ✅ NO /api here
+      const response = await API.get('/interviews')
 
       return response.data
 
     } catch (error) {
-      console.error('❌ Fetch interviews error:', error.response?.data || error.message)
+      console.error(
+        '❌ Fetch interviews error:',
+        error.response?.data || error.message
+      )
+
       throw new Error(
         error.response?.data?.message || 'Failed to fetch interviews'
       )
