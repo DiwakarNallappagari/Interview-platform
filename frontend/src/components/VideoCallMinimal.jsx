@@ -1,30 +1,27 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 
 const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
+
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
-  const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
 
-  const [remoteStream, setRemoteStream] = useState(null);
-  const [cameraOn, setCameraOn] = useState(true);
-  const [micOn, setMicOn] = useState(true);
+  const [cameraOn, setCameraOn] = useState(false);
+  const [micOn, setMicOn] = useState(false);
 
   useImperativeHandle(ref, () => ({
     stopConnection: () => {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
       }
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-      }
     }
   }));
 
   useEffect(() => {
-    const startMedia = async () => {
+
+    const startCamera = async () => {
+
       try {
-        console.log("Requesting camera and mic...");
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -33,150 +30,110 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
         localStreamRef.current = stream;
 
-        // enable tracks
-        stream.getVideoTracks().forEach(track => (track.enabled = true));
-        stream.getAudioTracks().forEach(track => (track.enabled = true));
-
-        setCameraOn(true);
-        setMicOn(true);
-
-        // attach stream to local video
         const video = localVideoRef.current;
+
         if (video) {
           video.srcObject = stream;
           video.muted = true;
-          video.autoplay = true;
-          video.playsInline = true;
-
-          video.onloadedmetadata = () => {
-            video.play().catch(() => {});
-          };
+          await video.play();
         }
 
-        const peerConnection = new RTCPeerConnection({
-          iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+        // Start with tracks OFF to match expected behavior
+        stream.getVideoTracks().forEach(track => {
+          track.enabled = false;
+        });
+        stream.getAudioTracks().forEach(track => {
+          track.enabled = false;
         });
 
-        peerConnectionRef.current = peerConnection;
+        setCameraOn(false);
+        setMicOn(false);
 
-        stream.getTracks().forEach(track => {
-          peerConnection.addTrack(track, stream);
-        });
-
-        peerConnection.ontrack = event => {
-          setRemoteStream(event.streams[0]);
-
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = event.streams[0];
-          }
-        };
-
-      } catch (error) {
-        console.error("Camera/Mic error:", error);
+      } catch (err) {
+        console.error("Camera error:", err);
       }
+
     };
 
-    startMedia();
+    startCamera();
 
-    return () => {
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
-      }
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-      }
-    };
   }, []);
 
   const toggleCamera = () => {
+
     if (!localStreamRef.current) return;
 
-    const newState = !cameraOn;
     const track = localStreamRef.current.getVideoTracks()[0];
 
-    if (track) track.enabled = newState;
-    setCameraOn(newState);
+    track.enabled = !track.enabled;
+
+    setCameraOn(track.enabled);
+
   };
 
   const toggleMic = () => {
+
     if (!localStreamRef.current) return;
 
-    const newState = !micOn;
     const track = localStreamRef.current.getAudioTracks()[0];
 
-    if (track) track.enabled = newState;
-    setMicOn(newState);
+    track.enabled = !track.enabled;
+
+    setMicOn(track.enabled);
+
   };
 
   return (
-    <div className="bg-black rounded-lg overflow-hidden flex-1 flex flex-col">
 
-      <div className="relative w-full h-full flex">
+    <div className="bg-black flex flex-col h-full">
 
-        {/* Remote Video */}
-        <div className="w-full h-full relative">
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            className="w-full h-full object-cover"
-          />
+      {/* MAIN VIDEO AREA */}
+      <div className="flex-1 relative">
 
-          {!remoteStream && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <p className="text-white text-lg">
-                Waiting for other participant...
-              </p>
-            </div>
-          )}
+        {/* LOCAL VIDEO */}
+        <video
+          ref={localVideoRef}
+          autoPlay
+          muted
+          playsInline
+          style={{
+            width: "300px",
+            height: "200px",
+            position: "absolute",
+            bottom: "20px",
+            right: "20px",
+            background: "black"
+          }}
+        />
+
+        <div className="flex items-center justify-center h-full text-white">
+          Waiting for other participant...
         </div>
 
-        {/* Local Video */}
-        <div className="absolute bottom-4 right-4 w-48 h-36 bg-gray-800 rounded-lg overflow-hidden border-2 border-white">
-          <video
-            ref={localVideoRef}
-            autoPlay
-            playsInline
-            muted
-            style={{ width: "100%", height: "100%", objectFit: "cover" }}
-          />
-
-          {!cameraOn && (
-            <div className="absolute inset-0 flex items-center justify-center text-white text-sm">
-              Camera Off
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* Controls */}
-      <div className="bg-gray-800 p-4 flex justify-center gap-6">
+      {/* CONTROLS */}
+      <div className="bg-gray-800 p-4 flex gap-4 justify-center">
 
         <button
           onClick={toggleCamera}
-          className={`px-6 py-3 rounded-xl font-semibold ${
-            cameraOn
-              ? "bg-green-500 hover:bg-green-600 text-white"
-              : "bg-red-500 hover:bg-red-600 text-white"
-          }`}
+          className={`${cameraOn ? "bg-green-500" : "bg-red-500"} text-white px-6 py-2 rounded`}
         >
           {cameraOn ? "Camera On" : "Camera Off"}
         </button>
 
         <button
           onClick={toggleMic}
-          className={`px-6 py-3 rounded-xl font-semibold ${
-            micOn
-              ? "bg-green-500 hover:bg-green-600 text-white"
-              : "bg-red-500 hover:bg-red-600 text-white"
-          }`}
+          className={`${micOn ? "bg-green-500" : "bg-red-500"} text-white px-6 py-2 rounded`}
         >
           {micOn ? "Mic On" : "Mic Off"}
         </button>
 
       </div>
+
     </div>
   );
+
 });
 
 VideoCallMinimal.displayName = "VideoCallMinimal";

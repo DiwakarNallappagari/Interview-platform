@@ -47,10 +47,16 @@ router.post("/create-room", authMiddleware, async (req, res) => {
       return res.status(400).json({ message: "Candidate email is required" });
     }
 
-    const candidateUser = await User.findOne({ email: candidateEmail });
+    let candidateUser = await User.findOne({ email: candidateEmail });
 
     if (!candidateUser) {
-      return res.status(404).json({ message: "Candidate not found" });
+      // Auto-create candidate user if not found
+      candidateUser = await User.create({
+        email: candidateEmail,
+        role: 'candidate',
+        password: 'tempPassword123', // Should be changed later
+        name: candidateEmail.split('@')[0] // Extract name from email
+      });
     }
 
     const roomId = nanoid(12);
