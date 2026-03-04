@@ -35,29 +35,33 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
         localStreamRef.current = stream;
 
-        // Turn camera and mic ON initially
-        stream.getVideoTracks().forEach((track) => (track.enabled = true));
-        stream.getAudioTracks().forEach((track) => (track.enabled = true));
+        // turn camera and mic ON initially
+        stream.getVideoTracks().forEach(track => track.enabled = true);
+        stream.getAudioTracks().forEach(track => track.enabled = true);
 
         setCameraOn(true);
         setMicOn(true);
 
-        // Show local preview
+        // show local preview
         if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-          localVideoRef.current.muted = true;
-          localVideoRef.current.playsInline = true;
-          await localVideoRef.current.play().catch(() => {});
+          const video = localVideoRef.current;
+          video.srcObject = stream;
+          video.muted = true;
+          video.playsInline = true;
+
+          video.onloadedmetadata = () => {
+            video.play().catch(() => {});
+          };
         }
 
-        // Create peer connection
+        // create peer connection
         const peerConnection = new RTCPeerConnection({
           iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
         });
 
         peerConnectionRef.current = peerConnection;
 
-        stream.getTracks().forEach((track) => {
+        stream.getTracks().forEach(track => {
           peerConnection.addTrack(track, stream);
         });
 
@@ -70,9 +74,8 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           }
         };
 
-        console.log("✅ Peer connection initialized");
       } catch (err) {
-        console.error("❌ Error accessing camera/mic:", err);
+        console.error("❌ Camera/Mic error:", err);
       }
     };
 
@@ -80,7 +83,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
     return () => {
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
+        localStreamRef.current.getTracks().forEach(track => track.stop());
       }
 
       if (peerConnectionRef.current) {
@@ -89,42 +92,38 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
     };
   }, []);
 
-  // Toggle Camera
+  // camera toggle
   const toggleCamera = () => {
     if (!localStreamRef.current) return;
 
     const newState = !cameraOn;
 
     const videoTrack = localStreamRef.current.getVideoTracks()[0];
-    if (videoTrack) {
-      videoTrack.enabled = newState;
-    }
+    if (videoTrack) videoTrack.enabled = newState;
 
     setCameraOn(newState);
   };
 
-  // Toggle Microphone
+  // mic toggle
   const toggleMic = () => {
     if (!localStreamRef.current) return;
 
     const newState = !micOn;
 
     const audioTrack = localStreamRef.current.getAudioTracks()[0];
-    if (audioTrack) {
-      audioTrack.enabled = newState;
-    }
+    if (audioTrack) audioTrack.enabled = newState;
 
     setMicOn(newState);
   };
 
   return (
     <div className="bg-black rounded-lg overflow-hidden flex-1 flex flex-col">
-      
-      {/* Video Section */}
+
+      {/* Video Area */}
       <div className="relative w-full h-full flex">
-        
+
         {/* Remote Video */}
-        <div className="w-full h-full">
+        <div className="w-full h-full relative">
           <video
             ref={remoteVideoRef}
             autoPlay
@@ -133,7 +132,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           />
 
           {!remoteStream && (
-            <div className="w-full h-full flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <p className="text-white text-lg">
                 Waiting for other participant...
               </p>
@@ -157,12 +156,13 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
             </div>
           )}
         </div>
+
       </div>
 
       {/* Controls */}
       <div className="bg-gray-800 p-4 flex justify-center gap-6">
-        
-        {/* Camera Button */}
+
+        {/* Camera */}
         <button
           onClick={toggleCamera}
           className={`px-6 py-3 rounded-xl font-semibold ${
@@ -174,7 +174,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           {cameraOn ? "🎥 Camera On" : "🚫 Camera Off"}
         </button>
 
-        {/* Mic Button */}
+        {/* Mic */}
         <button
           onClick={toggleMic}
           className={`px-6 py-3 rounded-xl font-semibold ${
@@ -187,6 +187,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
         </button>
 
       </div>
+
     </div>
   );
 });
