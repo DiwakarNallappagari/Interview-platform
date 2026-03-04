@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
+import socket from "../utils/socket";
 
 const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
@@ -54,7 +55,6 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
         setCameraOn(false);
         setMicOn(false);
 
-        // Create peer connection
         const peerConnection = new RTCPeerConnection({
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" }
@@ -68,7 +68,17 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           peerConnection.addTrack(track, stream);
         });
 
-        // Receive remote stream
+        // ICE candidates
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            socket.emit("ice-candidate", {
+              roomId,
+              candidate: event.candidate
+            });
+          }
+        };
+
+        // Remote stream
         peerConnection.ontrack = (event) => {
 
           const stream = event.streams[0];
@@ -89,7 +99,69 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
     startMedia();
 
-  }, []);
+
+    // OFFER RECEIVED
+    socket.on("offer", async ({ offer }) => {
+
+      const pc = peerConnectionRef.current;
+
+      await pc.setRemoteDescription(offer);
+
+      const answer = await pc.createAnswer();
+
+      await pc.setLocalDescription(answer);
+
+      socket.emit("answer", { roomId, answer });
+
+    });
+
+
+    // ANSWER RECEIVED
+    socket.on("answer", async ({ answer }) => {
+
+      const pc = peerConnectionRef.current;
+
+      await pc.setRemoteDescription(answer);
+
+    });
+
+
+    // ICE CANDIDATE RECEIVED
+    socket.on("ice-candidate", async ({ candidate }) => {
+
+      if (peerConnectionRef.current && candidate) {
+
+        await peerConnectionRef.current.addIceCandidate(candidate);
+
+      }
+
+    });
+
+
+    // WHEN OTHER USER JOINS
+    socket.on("user-joined", async () => {
+
+      const pc = peerConnectionRef.current;
+
+      const offer = await pc.createOffer();
+
+      await pc.setLocalDescription(offer);
+
+      socket.emit("offer", { roomId, offer });
+
+    });
+
+
+    return () => {
+
+      socket.off("offer");
+      socket.off("answer");
+      socket.off("ice-candidate");
+      socket.off("user-joined");
+
+    };
+
+  }, [roomId]);
 
 
   const toggleCamera = () => {
