@@ -14,7 +14,6 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
   useImperativeHandle(ref, () => ({
     stopConnection: () => {
-
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
       }
@@ -22,7 +21,6 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
       }
-
     }
   }));
 
@@ -40,15 +38,13 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
         localStreamRef.current = stream;
 
-        const video = localVideoRef.current;
-
-        if (video) {
-          video.srcObject = stream;
-          video.muted = true;
-          await video.play();
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+          localVideoRef.current.muted = true;
+          await localVideoRef.current.play().catch(()=>{});
         }
 
-        // Start tracks OFF
+        // Start camera and mic OFF
         stream.getVideoTracks().forEach(track => track.enabled = false);
         stream.getAudioTracks().forEach(track => track.enabled = false);
 
@@ -63,36 +59,43 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
         peerConnectionRef.current = peerConnection;
 
-        // Add tracks
+        // Add local tracks
         stream.getTracks().forEach(track => {
           peerConnection.addTrack(track, stream);
         });
 
-        // ICE candidates
+        // ICE candidate sending
         peerConnection.onicecandidate = (event) => {
+
           if (event.candidate) {
+
             socket.emit("ice-candidate", {
               roomId,
               candidate: event.candidate
             });
+
           }
+
         };
 
-        // Remote stream
+        // Remote stream receive
         peerConnection.ontrack = (event) => {
 
-          const stream = event.streams[0];
+          const remote = event.streams[0];
 
           if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = stream;
+            remoteVideoRef.current.srcObject = remote;
             remoteVideoRef.current.play().catch(()=>{});
           }
 
-          setRemoteStream(stream);
+          setRemoteStream(remote);
+
         };
 
       } catch (err) {
-        console.error("Camera error:", err);
+
+        console.error("Camera/Mic error:", err);
+
       }
 
     };
@@ -105,13 +108,18 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
       const pc = peerConnectionRef.current;
 
-      await pc.setRemoteDescription(offer);
+      if (!pc) return;
+
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
       const answer = await pc.createAnswer();
 
       await pc.setLocalDescription(answer);
 
-      socket.emit("answer", { roomId, answer });
+      socket.emit("answer", {
+        roomId,
+        answer
+      });
 
     });
 
@@ -121,33 +129,42 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
       const pc = peerConnectionRef.current;
 
-      await pc.setRemoteDescription(answer);
+      if (!pc) return;
+
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
     });
 
 
-    // ICE CANDIDATE RECEIVED
+    // ICE RECEIVED
     socket.on("ice-candidate", async ({ candidate }) => {
 
-      if (peerConnectionRef.current && candidate) {
+      const pc = peerConnectionRef.current;
 
-        await peerConnectionRef.current.addIceCandidate(candidate);
+      if (pc && candidate) {
+
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
 
       }
 
     });
 
 
-    // WHEN OTHER USER JOINS
+    // OTHER USER JOINED → create offer
     socket.on("user-joined", async () => {
 
       const pc = peerConnectionRef.current;
+
+      if (!pc) return;
 
       const offer = await pc.createOffer();
 
       await pc.setLocalDescription(offer);
 
-      socket.emit("offer", { roomId, offer });
+      socket.emit("offer", {
+        roomId,
+        offer
+      });
 
     });
 
@@ -205,7 +222,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
         />
 
         {!remoteStream && (
-          <div className="absolute inset-0 flex items-center justify-center text-white">
+          <div className="absolute inset-0 flex items-center justify-center text-white text-lg">
             Waiting for other participant...
           </div>
         )}
