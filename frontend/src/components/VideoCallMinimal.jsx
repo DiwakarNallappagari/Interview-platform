@@ -7,6 +7,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
   const remoteVideoRef = useRef(null);
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
+  const pendingCandidates = useRef([]);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [micOn, setMicOn] = useState(false);
@@ -17,18 +18,15 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
       }
-
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
       }
     }
   }));
 
-
   useEffect(() => {
 
     const startMedia = async () => {
-
       try {
 
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -44,43 +42,33 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           await localVideoRef.current.play().catch(()=>{});
         }
 
-        // Start camera and mic OFF
+        // start camera & mic OFF
         stream.getVideoTracks().forEach(track => track.enabled = false);
         stream.getAudioTracks().forEach(track => track.enabled = false);
 
         setCameraOn(false);
         setMicOn(false);
 
-        const peerConnection = new RTCPeerConnection({
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" }
-          ]
+        const pc = new RTCPeerConnection({
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
         });
 
-        peerConnectionRef.current = peerConnection;
+        peerConnectionRef.current = pc;
 
-        // Add local tracks
         stream.getTracks().forEach(track => {
-          peerConnection.addTrack(track, stream);
+          pc.addTrack(track, stream);
         });
 
-        // ICE candidate sending
-        peerConnection.onicecandidate = (event) => {
-
+        pc.onicecandidate = (event) => {
           if (event.candidate) {
-
             socket.emit("ice-candidate", {
               roomId,
               candidate: event.candidate
             });
-
           }
-
         };
 
-        // Remote stream receive
-        peerConnection.ontrack = (event) => {
-
+        pc.ontrack = (event) => {
           const remote = event.streams[0];
 
           if (remoteVideoRef.current) {
@@ -89,131 +77,104 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           }
 
           setRemoteStream(remote);
-
         };
 
       } catch (err) {
-
-        console.error("Camera/Mic error:", err);
-
+        console.error("Media error:", err);
       }
-
     };
 
     startMedia();
 
+    if (!socket.connected) socket.connect();
 
-    // OFFER RECEIVED
-    socket.on("offer", async ({ offer }) => {
+    socket.emit("join-room", {
+      roomId,
+      userId: socket.id,
+      userName: "Guest"
+    });
 
+    const handleUserJoined = async () => {
       const pc = peerConnectionRef.current;
+      if (!pc) return;
 
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      socket.emit("offer", { roomId, offer });
+    };
+
+    const handleOffer = async ({ offer }) => {
+      const pc = peerConnectionRef.current;
       if (!pc) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
       const answer = await pc.createAnswer();
-
       await pc.setLocalDescription(answer);
 
-      socket.emit("answer", {
-        roomId,
-        answer
+      socket.emit("answer", { roomId, answer });
+
+      pendingCandidates.current.forEach(async c => {
+        try { await pc.addIceCandidate(c); } catch {}
       });
 
-    });
+      pendingCandidates.current = [];
+    };
 
-
-    // ANSWER RECEIVED
-    socket.on("answer", async ({ answer }) => {
-
+    const handleAnswer = async ({ answer }) => {
       const pc = peerConnectionRef.current;
-
       if (!pc) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    };
 
-    });
-
-
-    // ICE RECEIVED
-    socket.on("ice-candidate", async ({ candidate }) => {
-
+    const handleIce = async ({ candidate }) => {
       const pc = peerConnectionRef.current;
+      if (!pc || !candidate) return;
 
-      if (pc && candidate) {
+      const ice = new RTCIceCandidate(candidate);
 
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-
+      if (pc.remoteDescription) {
+        try { await pc.addIceCandidate(ice); } catch {}
+      } else {
+        pendingCandidates.current.push(ice);
       }
+    };
 
-    });
-
-
-    // OTHER USER JOINED → create offer
-    socket.on("user-joined", async () => {
-
-      const pc = peerConnectionRef.current;
-
-      if (!pc) return;
-
-      const offer = await pc.createOffer();
-
-      await pc.setLocalDescription(offer);
-
-      socket.emit("offer", {
-        roomId,
-        offer
-      });
-
-    });
-
+    socket.on("user-joined", handleUserJoined);
+    socket.on("offer", handleOffer);
+    socket.on("answer", handleAnswer);
+    socket.on("ice-candidate", handleIce);
 
     return () => {
-
-      socket.off("offer");
-      socket.off("answer");
-      socket.off("ice-candidate");
-      socket.off("user-joined");
-
+      socket.off("user-joined", handleUserJoined);
+      socket.off("offer", handleOffer);
+      socket.off("answer", handleAnswer);
+      socket.off("ice-candidate", handleIce);
     };
 
   }, [roomId]);
 
-
   const toggleCamera = () => {
-
     if (!localStreamRef.current) return;
-
     const track = localStreamRef.current.getVideoTracks()[0];
-
     track.enabled = !track.enabled;
-
     setCameraOn(track.enabled);
-
   };
-
 
   const toggleMic = () => {
-
     if (!localStreamRef.current) return;
-
     const track = localStreamRef.current.getAudioTracks()[0];
-
     track.enabled = !track.enabled;
-
     setMicOn(track.enabled);
-
   };
 
-
   return (
-
     <div className="bg-black flex flex-col h-full">
 
       <div className="flex-1 relative">
 
-        {/* Remote video */}
         <video
           ref={remoteVideoRef}
           autoPlay
@@ -227,7 +188,6 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           </div>
         )}
 
-        {/* Local video */}
         <video
           ref={localVideoRef}
           autoPlay
@@ -264,7 +224,6 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       </div>
 
     </div>
-
   );
 
 });
@@ -272,3 +231,4 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 VideoCallMinimal.displayName = "VideoCallMinimal";
 
 export default VideoCallMinimal;
+```
