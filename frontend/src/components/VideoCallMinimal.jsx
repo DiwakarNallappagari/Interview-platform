@@ -13,40 +13,39 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
   useImperativeHandle(ref, () => ({
     stopConnection: () => {
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop());
+        localStreamRef.current.getTracks().forEach(track => track.stop());
       }
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
       }
-    },
+    }
   }));
 
   useEffect(() => {
     const startMedia = async () => {
       try {
-        console.log("🎥 Requesting media devices...");
+        console.log("Requesting camera and mic...");
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
-          audio: true,
+          audio: true
         });
-
-        console.log("✅ Media stream obtained");
 
         localStreamRef.current = stream;
 
-        // turn camera and mic ON initially
-        stream.getVideoTracks().forEach(track => track.enabled = true);
-        stream.getAudioTracks().forEach(track => track.enabled = true);
+        // enable tracks
+        stream.getVideoTracks().forEach(track => (track.enabled = true));
+        stream.getAudioTracks().forEach(track => (track.enabled = true));
 
         setCameraOn(true);
         setMicOn(true);
 
-        // show local preview
-        if (localVideoRef.current) {
-          const video = localVideoRef.current;
+        // attach stream to local video
+        const video = localVideoRef.current;
+        if (video) {
           video.srcObject = stream;
           video.muted = true;
+          video.autoplay = true;
           video.playsInline = true;
 
           video.onloadedmetadata = () => {
@@ -54,9 +53,8 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           };
         }
 
-        // create peer connection
         const peerConnection = new RTCPeerConnection({
-          iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
         });
 
         peerConnectionRef.current = peerConnection;
@@ -65,8 +63,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           peerConnection.addTrack(track, stream);
         });
 
-        peerConnection.ontrack = (event) => {
-          console.log("📡 Remote stream received");
+        peerConnection.ontrack = event => {
           setRemoteStream(event.streams[0]);
 
           if (remoteVideoRef.current) {
@@ -74,8 +71,8 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           }
         };
 
-      } catch (err) {
-        console.error("❌ Camera/Mic error:", err);
+      } catch (error) {
+        console.error("Camera/Mic error:", error);
       }
     };
 
@@ -85,41 +82,35 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
       }
-
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
       }
     };
   }, []);
 
-  // camera toggle
   const toggleCamera = () => {
     if (!localStreamRef.current) return;
 
     const newState = !cameraOn;
+    const track = localStreamRef.current.getVideoTracks()[0];
 
-    const videoTrack = localStreamRef.current.getVideoTracks()[0];
-    if (videoTrack) videoTrack.enabled = newState;
-
+    if (track) track.enabled = newState;
     setCameraOn(newState);
   };
 
-  // mic toggle
   const toggleMic = () => {
     if (!localStreamRef.current) return;
 
     const newState = !micOn;
+    const track = localStreamRef.current.getAudioTracks()[0];
 
-    const audioTrack = localStreamRef.current.getAudioTracks()[0];
-    if (audioTrack) audioTrack.enabled = newState;
-
+    if (track) track.enabled = newState;
     setMicOn(newState);
   };
 
   return (
     <div className="bg-black rounded-lg overflow-hidden flex-1 flex flex-col">
 
-      {/* Video Area */}
       <div className="relative w-full h-full flex">
 
         {/* Remote Video */}
@@ -132,7 +123,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           />
 
           {!remoteStream && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 flex items-center justify-center">
               <p className="text-white text-lg">
                 Waiting for other participant...
               </p>
@@ -147,22 +138,20 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
             autoPlay
             playsInline
             muted
-            className="w-full h-full object-cover"
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
           />
 
           {!cameraOn && (
-            <div className="absolute inset-0 bg-black flex items-center justify-center text-white text-sm">
+            <div className="absolute inset-0 flex items-center justify-center text-white text-sm">
               Camera Off
             </div>
           )}
         </div>
-
       </div>
 
       {/* Controls */}
       <div className="bg-gray-800 p-4 flex justify-center gap-6">
 
-        {/* Camera */}
         <button
           onClick={toggleCamera}
           className={`px-6 py-3 rounded-xl font-semibold ${
@@ -171,10 +160,9 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
               : "bg-red-500 hover:bg-red-600 text-white"
           }`}
         >
-          {cameraOn ? "🎥 Camera On" : "🚫 Camera Off"}
+          {cameraOn ? "Camera On" : "Camera Off"}
         </button>
 
-        {/* Mic */}
         <button
           onClick={toggleMic}
           className={`px-6 py-3 rounded-xl font-semibold ${
@@ -183,11 +171,10 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
               : "bg-red-500 hover:bg-red-600 text-white"
           }`}
         >
-          {micOn ? "🎤 Mic On" : "🔇 Mic Off"}
+          {micOn ? "Mic On" : "Mic Off"}
         </button>
 
       </div>
-
     </div>
   );
 });
