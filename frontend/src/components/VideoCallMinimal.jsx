@@ -42,7 +42,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           await localVideoRef.current.play().catch(()=>{});
         }
 
-        // start camera & mic OFF
+        // start with camera & mic OFF
         stream.getVideoTracks().forEach(track => track.enabled = false);
         stream.getAudioTracks().forEach(track => track.enabled = false);
 
@@ -51,7 +51,8 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
         const pc = new RTCPeerConnection({
           iceServers: [
-            { urls: "stun:stun.l.google.com:19302" }
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:global.stun.twilio.com:3478" }
           ]
         });
 
@@ -86,15 +87,21 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       }
     };
 
-    startMedia();
+    const init = async () => {
 
-    if (!socket.connected) socket.connect();
+      if (!socket.connected) socket.connect();
 
-    socket.emit("join-room", {
-      roomId,
-      userId: socket.id,
-      userName: "Guest"
-    });
+      await startMedia();
+
+      socket.emit("join-room", {
+        roomId,
+        userId: socket.id,
+        userName: "Guest"
+      });
+
+    };
+
+    init();
 
     const handleUserJoined = async () => {
       const pc = peerConnectionRef.current;
@@ -244,4 +251,3 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 VideoCallMinimal.displayName = "VideoCallMinimal";
 
 export default VideoCallMinimal;
-
