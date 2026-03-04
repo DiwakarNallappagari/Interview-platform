@@ -1,120 +1,128 @@
-import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react'
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 
 const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
-  const localVideoRef = useRef(null)
-  const remoteVideoRef = useRef(null)
-  const peerConnectionRef = useRef(null)
-  const localStreamRef = useRef(null)
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const peerConnectionRef = useRef(null);
+  const localStreamRef = useRef(null);
 
-  const [remoteStream, setRemoteStream] = useState(null)
-  const [cameraOn, setCameraOn] = useState(false)
-  const [micOn, setMicOn] = useState(false)
+  const [remoteStream, setRemoteStream] = useState(null);
+  const [cameraOn, setCameraOn] = useState(true);
+  const [micOn, setMicOn] = useState(true);
 
   useImperativeHandle(ref, () => ({
     stopConnection: () => {
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop())
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
       }
       if (peerConnectionRef.current) {
-        peerConnectionRef.current.close()
+        peerConnectionRef.current.close();
       }
     },
-  }))
+  }));
 
   useEffect(() => {
     const startMedia = async () => {
       try {
-        console.log('🎥 Requesting media devices...')
+        console.log("🎥 Requesting media devices...");
+
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: true,
           audio: true,
-        })
+        });
 
-        console.log('✅ Media stream obtained:', stream)
-        localStreamRef.current = stream
+        console.log("✅ Media stream obtained");
 
-        // Set tracks to OFF initially
-        stream.getVideoTracks().forEach(track => {
-          track.enabled = false
-        })
-        stream.getAudioTracks().forEach(track => {
-          track.enabled = false
-        })
+        localStreamRef.current = stream;
 
+        // Turn camera and mic ON initially
+        stream.getVideoTracks().forEach((track) => (track.enabled = true));
+        stream.getAudioTracks().forEach((track) => (track.enabled = true));
+
+        setCameraOn(true);
+        setMicOn(true);
+
+        // Show local preview
         if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream
+          localVideoRef.current.srcObject = stream;
+          localVideoRef.current.muted = true;
+          localVideoRef.current.playsInline = true;
+          await localVideoRef.current.play().catch(() => {});
         }
 
-        // Simple peer connection setup
+        // Create peer connection
         const peerConnection = new RTCPeerConnection({
-          iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }],
-        })
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+        });
 
-        peerConnectionRef.current = peerConnection
+        peerConnectionRef.current = peerConnection;
 
         stream.getTracks().forEach((track) => {
-          peerConnection.addTrack(track, stream)
-        })
+          peerConnection.addTrack(track, stream);
+        });
 
-        peerConnection.ontrack = (evt) => {
-          setRemoteStream(evt.streams[0])
+        peerConnection.ontrack = (event) => {
+          console.log("📡 Remote stream received");
+          setRemoteStream(event.streams[0]);
+
           if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = evt.streams[0]
+            remoteVideoRef.current.srcObject = event.streams[0];
           }
-        }
+        };
 
-        console.log('✅ Peer connection initialized')
+        console.log("✅ Peer connection initialized");
       } catch (err) {
-        console.error('❌ Error accessing media devices:', err)
+        console.error("❌ Error accessing camera/mic:", err);
       }
-    }
+    };
 
-    startMedia()
+    startMedia();
 
     return () => {
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track) => track.stop())
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
       }
+
       if (peerConnectionRef.current) {
-        peerConnectionRef.current.close()
+        peerConnectionRef.current.close();
       }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    };
+  }, []);
 
-  // Simple toggle functions
+  // Toggle Camera
   const toggleCamera = () => {
-    const newState = !cameraOn
-    console.log(`🎥 Camera toggle: ${cameraOn} -> ${newState}`)
-    
-    if (localStreamRef.current) {
-      const videoTracks = localStreamRef.current.getVideoTracks()
-      videoTracks.forEach(track => {
-        track.enabled = newState
-      })
-    }
-    
-    setCameraOn(newState)
-  }
+    if (!localStreamRef.current) return;
 
-  const toggleMic = () => {
-    const newState = !micOn
-    console.log(`🎤 Mic toggle: ${micOn} -> ${newState}`)
-    
-    if (localStreamRef.current) {
-      const audioTracks = localStreamRef.current.getAudioTracks()
-      audioTracks.forEach(track => {
-        track.enabled = newState
-      })
+    const newState = !cameraOn;
+
+    const videoTrack = localStreamRef.current.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.enabled = newState;
     }
-    
-    setMicOn(newState)
-  }
+
+    setCameraOn(newState);
+  };
+
+  // Toggle Microphone
+  const toggleMic = () => {
+    if (!localStreamRef.current) return;
+
+    const newState = !micOn;
+
+    const audioTrack = localStreamRef.current.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = newState;
+    }
+
+    setMicOn(newState);
+  };
 
   return (
     <div className="bg-black rounded-lg overflow-hidden flex-1 flex flex-col">
+      
       {/* Video Section */}
       <div className="relative w-full h-full flex">
+        
         {/* Remote Video */}
         <div className="w-full h-full">
           <video
@@ -123,6 +131,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
             playsInline
             className="w-full h-full object-cover"
           />
+
           {!remoteStream && (
             <div className="w-full h-full flex items-center justify-center">
               <p className="text-white text-lg">
@@ -150,38 +159,38 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
         </div>
       </div>
 
-      {/* Control Buttons */}
+      {/* Controls */}
       <div className="bg-gray-800 p-4 flex justify-center gap-6">
+        
         {/* Camera Button */}
         <button
-          type="button"
           onClick={toggleCamera}
-          className={`px-6 py-3 rounded-xl font-semibold transition-all duration-200 ${
+          className={`px-6 py-3 rounded-xl font-semibold ${
             cameraOn
-              ? 'bg-green-500 hover:bg-green-600 text-white shadow-lg'
-              : 'bg-red-500 hover:bg-red-600 text-white shadow-lg'
+              ? "bg-green-500 hover:bg-green-600 text-white"
+              : "bg-red-500 hover:bg-red-600 text-white"
           }`}
         >
-          {cameraOn ? '🎥 Camera On' : '🚫 Camera Off'}
+          {cameraOn ? "🎥 Camera On" : "🚫 Camera Off"}
         </button>
 
-        {/* Microphone Button */}
+        {/* Mic Button */}
         <button
-          type="button"
           onClick={toggleMic}
-          className={`px-6 py-3 rounded-xl font-semibold transition-all duration-200 ${
+          className={`px-6 py-3 rounded-xl font-semibold ${
             micOn
-              ? 'bg-green-500 hover:bg-green-600 text-white shadow-lg'
-              : 'bg-red-500 hover:bg-red-600 text-white shadow-lg'
+              ? "bg-green-500 hover:bg-green-600 text-white"
+              : "bg-red-500 hover:bg-red-600 text-white"
           }`}
         >
-          {micOn ? '🎤 Mic On' : '🔇 Mic Off'}
+          {micOn ? "🎤 Mic On" : "🔇 Mic Off"}
         </button>
+
       </div>
     </div>
-  )
-})
+  );
+});
 
-VideoCallMinimal.displayName = 'VideoCallMinimal'
+VideoCallMinimal.displayName = "VideoCallMinimal";
 
-export default VideoCallMinimal
+export default VideoCallMinimal;
