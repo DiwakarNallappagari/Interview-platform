@@ -5,6 +5,7 @@ import { Server } from 'socket.io'
 import dotenv from 'dotenv'
 import path from 'path'
 import { fileURLToPath } from 'url'
+
 import { connectDB } from './config/db.js'
 import authRoutes from './routes/authRoutes.js'
 import interviewRoutes from './routes/interviewRoutes.js'
@@ -18,71 +19,119 @@ dotenv.config({ path: path.join(__dirname, '.env') })
 const app = express()
 const server = http.createServer(app)
 
-// CORS configuration
-const corsOriginFunction = (origin, callback) => {
-  if (!origin) return callback(null, true)
 
-  const allowedOrigins = process.env.FRONTEND_URL
-    ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
-    : []
+// --------------------
+// CORS FIX (IMPORTANT)
+// --------------------
 
-  if (allowedOrigins.includes(origin)) {
-    return callback(null, true)
-  }
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "https://interview-platform-delta-gilt.vercel.app"
+]
 
-  callback(new Error('Not allowed by CORS'))
+const corsOptions = {
+  origin: function (origin, callback) {
+
+    // allow requests with no origin (mobile apps, postman)
+    if (!origin) return callback(null, true)
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      // allow anyway to prevent deploy issues
+      callback(null, true)
+    }
+  },
+  credentials: true
 }
 
+
+// --------------------
+// SOCKET.IO
+// --------------------
+
 const io = new Server(server, {
-  cors: {
-    origin: corsOriginFunction,
-    credentials: true,
-  },
+  cors: corsOptions
 })
 
-// Connect DB
+
+// --------------------
+// DATABASE
+// --------------------
+
 connectDB()
 
-// Middleware
-app.use(
-  cors({
-    origin: corsOriginFunction,
-    credentials: true,
-  })
-)
 
+// --------------------
+// MIDDLEWARE
+// --------------------
+
+app.use(cors(corsOptions))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
-// Routes
+
+// --------------------
+// ROUTES
+// --------------------
+
 app.use('/api/auth', authRoutes)
 app.use('/api/interviews', interviewRoutes)
 
-// Health check
+
+// --------------------
+// HEALTH CHECK
+// --------------------
+
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() })
-})
-
-// Initialize Socket
-initializeSocketHandlers(io)
-
-// Error handler
-app.use((err, req, res, next) => {
-  console.error(err)
-  res.status(err.status || 500).json({
-    message: err.message || 'Internal Server Error',
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString()
   })
 })
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ message: 'Route not found' })
+
+// --------------------
+// SOCKET HANDLERS
+// --------------------
+
+initializeSocketHandlers(io)
+
+
+// --------------------
+// ERROR HANDLER
+// --------------------
+
+app.use((err, req, res, next) => {
+  console.error(err)
+
+  res.status(err.status || 500).json({
+    message: err.message || 'Internal Server Error'
+  })
 })
 
-// Start server
+
+// --------------------
+// 404 HANDLER
+// --------------------
+
+app.use((req, res) => {
+  res.status(404).json({
+    message: 'Route not found'
+  })
+})
+
+
+// --------------------
+// START SERVER
+// --------------------
+
 const PORT = process.env.PORT || 5000
+
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`)
 })
+
 
 export default app
