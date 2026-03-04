@@ -50,7 +50,9 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
         setMicOn(false);
 
         const pc = new RTCPeerConnection({
-          iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+          iceServers: [
+            { urls: "stun:stun.l.google.com:19302" }
+          ]
         });
 
         peerConnectionRef.current = pc;
@@ -115,8 +117,12 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
       socket.emit("answer", { roomId, answer });
 
-      pendingCandidates.current.forEach(async c => {
-        try { await pc.addIceCandidate(c); } catch {}
+      pendingCandidates.current.forEach(async (candidate) => {
+        try {
+          await pc.addIceCandidate(candidate);
+        } catch (err) {
+          console.warn("ICE candidate error:", err);
+        }
       });
 
       pendingCandidates.current = [];
@@ -133,12 +139,16 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       const pc = peerConnectionRef.current;
       if (!pc || !candidate) return;
 
-      const ice = new RTCIceCandidate(candidate);
+      const iceCandidate = new RTCIceCandidate(candidate);
 
       if (pc.remoteDescription) {
-        try { await pc.addIceCandidate(ice); } catch {}
+        try {
+          await pc.addIceCandidate(iceCandidate);
+        } catch (err) {
+          console.warn("ICE error:", err);
+        }
       } else {
-        pendingCandidates.current.push(ice);
+        pendingCandidates.current.push(iceCandidate);
       }
     };
 
@@ -158,15 +168,19 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
   const toggleCamera = () => {
     if (!localStreamRef.current) return;
+
     const track = localStreamRef.current.getVideoTracks()[0];
     track.enabled = !track.enabled;
+
     setCameraOn(track.enabled);
   };
 
   const toggleMic = () => {
     if (!localStreamRef.current) return;
+
     const track = localStreamRef.current.getAudioTracks()[0];
     track.enabled = !track.enabled;
+
     setMicOn(track.enabled);
   };
 
@@ -225,10 +239,9 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
     </div>
   );
-
 });
 
 VideoCallMinimal.displayName = "VideoCallMinimal";
 
 export default VideoCallMinimal;
-```
+
