@@ -12,8 +12,10 @@ function App() {
     <Router>
       <AuthProvider>
         <Routes>
+
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+
           <Route
             path="/dashboard"
             element={
@@ -22,6 +24,7 @@ function App() {
               </PrivateRoute>
             }
           />
+
           <Route
             path="/create-room"
             element={
@@ -30,15 +33,12 @@ function App() {
               </PrivateRoute>
             }
           />
-          <Route
-            path="/room/:roomId"
-            element={
-              <PrivateRoute>
-                <InterviewRoom />
-              </PrivateRoute>
-            }
-          />
+
+          {/* FIXED: Interview room should NOT be private */}
+          <Route path="/room/:roomId" element={<InterviewRoom />} />
+
           <Route path="/" element={<Navigate to="/dashboard" />} />
+
         </Routes>
       </AuthProvider>
     </Router>
