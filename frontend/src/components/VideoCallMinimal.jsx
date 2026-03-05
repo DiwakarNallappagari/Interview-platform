@@ -38,7 +38,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           await localVideoRef.current.play().catch(()=>{});
         }
 
-        // start with camera & mic OFF
+        // camera & mic start OFF
         stream.getVideoTracks().forEach(track => track.enabled = false);
         stream.getAudioTracks().forEach(track => track.enabled = false);
 
@@ -85,12 +85,16 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
       await startMedia();
 
-      if (!socket.connected) socket.connect();
+      if (!socket.connected) {
+        socket.connect();
+      }
 
-      socket.emit("join-room", {
-        roomId,
-        userId: socket.id || "guest",
-        userName: "Guest"
+      socket.on("connect", () => {
+        socket.emit("join-room", {
+          roomId,
+          userId: socket.id,
+          userName: "Guest"
+        });
       });
 
     };
@@ -101,6 +105,9 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
       const pc = peerConnectionRef.current;
       if (!pc) return;
+
+      // prevent duplicate offers
+      if (pc.currentLocalDescription) return;
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -147,7 +154,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       const pc = peerConnectionRef.current;
       if (!pc || !candidate) return;
 
-      const iceCandidate = new RTCIceCandidate(candidate);
+      const iceCandidate = new RTCIceCandidate(candidate || {});
 
       if (pc.remoteDescription) {
         try {
@@ -161,10 +168,8 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
     };
 
-    // WebRTC signaling events
     socket.on("user-joined", handleUserJoined);
 
-    // FIX: ensures offer if users already exist
     socket.on("room-joined", ({ users }) => {
       if (users && users.length > 1) {
         handleUserJoined();
