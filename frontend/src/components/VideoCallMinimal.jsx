@@ -15,12 +15,8 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
   useImperativeHandle(ref, () => ({
     stopConnection: () => {
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
-      }
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-      }
+      localStreamRef.current?.getTracks().forEach(track => track.stop());
+      peerConnectionRef.current?.close();
     }
   }));
 
@@ -58,9 +54,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
         peerConnectionRef.current = pc;
 
-        stream.getTracks().forEach(track => {
-          pc.addTrack(track, stream);
-        });
+        stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
         pc.onicecandidate = (event) => {
           if (event.candidate) {
@@ -91,16 +85,12 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
       await startMedia();
 
-      if (!socket.connected) {
-        socket.connect();
-      }
+      if (!socket.connected) socket.connect();
 
-      socket.on("connect", () => {
-        socket.emit("join-room", {
-          roomId,
-          userId: socket.id || "guest",
-          userName: "Guest"
-        });
+      socket.emit("join-room", {
+        roomId,
+        userId: socket.id || "guest",
+        userName: "Guest"
       });
 
     };
@@ -108,6 +98,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
     init();
 
     const handleUserJoined = async () => {
+
       const pc = peerConnectionRef.current;
       if (!pc) return;
 
@@ -115,9 +106,11 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       await pc.setLocalDescription(offer);
 
       socket.emit("offer", { roomId, offer });
+
     };
 
     const handleOffer = async ({ offer }) => {
+
       const pc = peerConnectionRef.current;
       if (!pc) return;
 
@@ -137,16 +130,20 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       });
 
       pendingCandidates.current = [];
+
     };
 
     const handleAnswer = async ({ answer }) => {
+
       const pc = peerConnectionRef.current;
       if (!pc) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
+
     };
 
     const handleIce = async ({ candidate }) => {
+
       const pc = peerConnectionRef.current;
       if (!pc || !candidate) return;
 
@@ -161,15 +158,26 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       } else {
         pendingCandidates.current.push(iceCandidate);
       }
+
     };
 
+    // WebRTC signaling events
     socket.on("user-joined", handleUserJoined);
+
+    // FIX: ensures offer if users already exist
+    socket.on("room-joined", ({ users }) => {
+      if (users && users.length > 1) {
+        handleUserJoined();
+      }
+    });
+
     socket.on("offer", handleOffer);
     socket.on("answer", handleAnswer);
     socket.on("ice-candidate", handleIce);
 
     return () => {
       socket.off("user-joined", handleUserJoined);
+      socket.off("room-joined");
       socket.off("offer", handleOffer);
       socket.off("answer", handleAnswer);
       socket.off("ice-candidate", handleIce);
@@ -178,21 +186,23 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
   }, [roomId]);
 
   const toggleCamera = () => {
-    if (!localStreamRef.current) return;
 
-    const track = localStreamRef.current.getVideoTracks()[0];
+    const track = localStreamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+
     track.enabled = !track.enabled;
-
     setCameraOn(track.enabled);
+
   };
 
   const toggleMic = () => {
-    if (!localStreamRef.current) return;
 
-    const track = localStreamRef.current.getAudioTracks()[0];
+    const track = localStreamRef.current?.getAudioTracks()[0];
+    if (!track) return;
+
     track.enabled = !track.enabled;
-
     setMicOn(track.enabled);
+
   };
 
   return (
@@ -250,6 +260,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
     </div>
   );
+
 });
 
 VideoCallMinimal.displayName = "VideoCallMinimal";
