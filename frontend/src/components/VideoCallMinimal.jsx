@@ -9,6 +9,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
   const localStreamRef = useRef(null);
   const pendingCandidates = useRef([]);
   const joinedRef = useRef(false);
+  const isInitiator = useRef(false);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [micOn, setMicOn] = useState(false);
@@ -39,7 +40,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           await localVideoRef.current.play().catch(()=>{});
         }
 
-        // start camera/mic OFF
+        // camera & mic OFF initially
         stream.getVideoTracks().forEach(t => t.enabled = false);
         stream.getAudioTracks().forEach(t => t.enabled = false);
 
@@ -88,6 +89,9 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
         userName: "Guest"
       });
 
+      // first user becomes initiator
+      isInitiator.current = true;
+
     };
 
     const init = async () => {
@@ -109,6 +113,8 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
     init();
 
     const handleUserJoined = async () => {
+
+      if (!isInitiator.current) return;
 
       const pc = peerConnectionRef.current;
       if (!pc) return;
