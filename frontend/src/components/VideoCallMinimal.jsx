@@ -37,10 +37,10 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
           localVideoRef.current.muted = true;
-          await localVideoRef.current.play().catch(()=>{});
+          await localVideoRef.current.play().catch(() => {});
         }
 
-        // camera & mic OFF initially
+        // start camera/mic OFF
         stream.getVideoTracks().forEach(t => t.enabled = false);
         stream.getAudioTracks().forEach(t => t.enabled = false);
 
@@ -89,7 +89,6 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
         userName: "Guest"
       });
 
-      // first user becomes initiator
       isInitiator.current = true;
 
     };
@@ -119,10 +118,15 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       const pc = peerConnectionRef.current;
       if (!pc) return;
 
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
 
-      socket.emit("offer", { roomId, offer });
+        socket.emit("offer", { roomId, offer });
+
+      } catch (err) {
+        console.error("Offer error:", err);
+      }
 
     };
 
@@ -131,20 +135,28 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       const pc = peerConnectionRef.current;
       if (!pc) return;
 
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      try {
 
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
-      socket.emit("answer", { roomId, answer });
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
 
-      pendingCandidates.current.forEach(async (candidate) => {
-        try {
-          await pc.addIceCandidate(candidate);
-        } catch {}
-      });
+        socket.emit("answer", { roomId, answer });
 
-      pendingCandidates.current = [];
+        pendingCandidates.current.forEach(async (candidate) => {
+          try {
+            await pc.addIceCandidate(candidate);
+          } catch (err) {
+            console.warn("ICE add error:", err);
+          }
+        });
+
+        pendingCandidates.current = [];
+
+      } catch (err) {
+        console.error("Offer handling error:", err);
+      }
 
     };
 
@@ -153,7 +165,11 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       const pc = peerConnectionRef.current;
       if (!pc) return;
 
-      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      } catch (err) {
+        console.error("Answer error:", err);
+      }
 
     };
 
@@ -167,7 +183,9 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       if (pc.remoteDescription) {
         try {
           await pc.addIceCandidate(iceCandidate);
-        } catch {}
+        } catch (err) {
+          console.warn("ICE error:", err);
+        }
       } else {
         pendingCandidates.current.push(iceCandidate);
       }
