@@ -89,14 +89,18 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
     const init = async () => {
 
-      if (!socket.connected) socket.connect();
-
       await startMedia();
 
-      socket.emit("join-room", {
-        roomId,
-        userId: socket.id,
-        userName: "Guest"
+      if (!socket.connected) {
+        socket.connect();
+      }
+
+      socket.on("connect", () => {
+        socket.emit("join-room", {
+          roomId,
+          userId: socket.id || "guest",
+          userName: "Guest"
+        });
       });
 
     };
