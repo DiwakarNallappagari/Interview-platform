@@ -13,6 +13,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
   const [cameraOn, setCameraOn] = useState(false);
   const [micOn, setMicOn] = useState(false);
+  const [screenSharing, setScreenSharing] = useState(false);
   const [remoteStream, setRemoteStream] = useState(null);
 
   useImperativeHandle(ref, () => ({
@@ -40,7 +41,6 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           await localVideoRef.current.play().catch(() => {});
         }
 
-        // start camera/mic OFF
         stream.getVideoTracks().forEach(t => t.enabled = false);
         stream.getAudioTracks().forEach(t => t.enabled = false);
 
@@ -119,6 +119,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       if (!pc) return;
 
       try {
+
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
@@ -226,6 +227,50 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
   };
 
+  const toggleScreenShare = async () => {
+
+    if (!peerConnectionRef.current) return;
+
+    try {
+
+      if (!screenSharing) {
+
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true
+        });
+
+        const screenTrack = screenStream.getVideoTracks()[0];
+
+        const sender = peerConnectionRef.current
+          .getSenders()
+          .find(s => s.track?.kind === "video");
+
+        if (sender) sender.replaceTrack(screenTrack);
+
+        screenTrack.onended = () => toggleScreenShare();
+
+        setScreenSharing(true);
+
+      } else {
+
+        const cameraTrack = localStreamRef.current?.getVideoTracks()[0];
+
+        const sender = peerConnectionRef.current
+          .getSenders()
+          .find(s => s.track?.kind === "video");
+
+        if (sender && cameraTrack) sender.replaceTrack(cameraTrack);
+
+        setScreenSharing(false);
+
+      }
+
+    } catch (err) {
+      console.error("Screen share error:", err);
+    }
+
+  };
+
   return (
     <div className="bg-black flex flex-col h-full">
 
@@ -275,6 +320,13 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           className={`${micOn ? "bg-green-500" : "bg-red-500"} text-white px-6 py-2 rounded`}
         >
           {micOn ? "Mic On" : "Mic Off"}
+        </button>
+
+        <button
+          onClick={toggleScreenShare}
+          className="bg-blue-500 text-white px-6 py-2 rounded"
+        >
+          {screenSharing ? "Stop Share" : "Share Screen"}
         </button>
 
       </div>
