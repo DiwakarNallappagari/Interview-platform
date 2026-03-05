@@ -8,6 +8,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
   const pendingCandidates = useRef([]);
+  const joinedRef = useRef(false);
 
   const [cameraOn, setCameraOn] = useState(false);
   const [micOn, setMicOn] = useState(false);
@@ -38,12 +39,9 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           await localVideoRef.current.play().catch(()=>{});
         }
 
-        // camera & mic start OFF
-        stream.getVideoTracks().forEach(track => track.enabled = false);
-        stream.getAudioTracks().forEach(track => track.enabled = false);
-
-        setCameraOn(false);
-        setMicOn(false);
+        // start camera/mic OFF
+        stream.getVideoTracks().forEach(t => t.enabled = false);
+        stream.getAudioTracks().forEach(t => t.enabled = false);
 
         const pc = new RTCPeerConnection({
           iceServers: [
@@ -56,6 +54,14 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
         stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
+        pc.ontrack = (event) => {
+          const remote = event.streams[0];
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = remote;
+          }
+          setRemoteStream(remote);
+        };
+
         pc.onicecandidate = (event) => {
           if (event.candidate) {
             socket.emit("ice-candidate", {
@@ -65,20 +71,23 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
           }
         };
 
-        pc.ontrack = (event) => {
-          const remote = event.streams[0];
-
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remote;
-            remoteVideoRef.current.play().catch(()=>{});
-          }
-
-          setRemoteStream(remote);
-        };
-
       } catch (err) {
         console.error("Media error:", err);
       }
+    };
+
+    const joinRoom = () => {
+
+      if (joinedRef.current) return;
+
+      joinedRef.current = true;
+
+      socket.emit("join-room", {
+        roomId,
+        userId: socket.id || "guest",
+        userName: "Guest"
+      });
+
     };
 
     const init = async () => {
@@ -89,13 +98,11 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
         socket.connect();
       }
 
-      socket.on("connect", () => {
-        socket.emit("join-room", {
-          roomId,
-          userId: socket.id,
-          userName: "Guest"
-        });
-      });
+      if (socket.connected) {
+        joinRoom();
+      } else {
+        socket.once("connect", joinRoom);
+      }
 
     };
 
@@ -105,9 +112,6 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
 
       const pc = peerConnectionRef.current;
       if (!pc) return;
-
-      // prevent duplicate offers
-      if (pc.currentLocalDescription) return;
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -131,9 +135,7 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       pendingCandidates.current.forEach(async (candidate) => {
         try {
           await pc.addIceCandidate(candidate);
-        } catch (err) {
-          console.warn("ICE candidate error:", err);
-        }
+        } catch {}
       });
 
       pendingCandidates.current = [];
@@ -154,14 +156,12 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
       const pc = peerConnectionRef.current;
       if (!pc || !candidate) return;
 
-      const iceCandidate = new RTCIceCandidate(candidate || {});
+      const iceCandidate = new RTCIceCandidate(candidate);
 
       if (pc.remoteDescription) {
         try {
           await pc.addIceCandidate(iceCandidate);
-        } catch (err) {
-          console.warn("ICE error:", err);
-        }
+        } catch {}
       } else {
         pendingCandidates.current.push(iceCandidate);
       }
@@ -169,20 +169,12 @@ const VideoCallMinimal = forwardRef(({ roomId }, ref) => {
     };
 
     socket.on("user-joined", handleUserJoined);
-
-    socket.on("room-joined", ({ users }) => {
-      if (users && users.length > 1) {
-        handleUserJoined();
-      }
-    });
-
     socket.on("offer", handleOffer);
     socket.on("answer", handleAnswer);
     socket.on("ice-candidate", handleIce);
 
     return () => {
       socket.off("user-joined", handleUserJoined);
-      socket.off("room-joined");
       socket.off("offer", handleOffer);
       socket.off("answer", handleAnswer);
       socket.off("ice-candidate", handleIce);
