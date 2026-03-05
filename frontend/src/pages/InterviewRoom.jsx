@@ -25,6 +25,11 @@ const InterviewRoom = () => {
   const [roomLoading, setRoomLoading] = useState(true);
   const [roomError, setRoomError] = useState(null);
 
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const inviteLink = `${window.location.origin}/room/${roomId}`;
+
   // ==============================
   // FETCH ROOM
   // ==============================
@@ -80,31 +85,21 @@ const InterviewRoom = () => {
       setRoomUsers(data.users || []);
     });
 
-    // ==============================
-    // CHAT LISTENER
-    // ==============================
-
     socket.on("chat-message", (msg) => {
-
       setMessages(prev => [...prev, msg]);
-
     });
 
     socket.on("interview-ended", () => {
-
       stopEverything();
       navigate("/dashboard");
-
     });
 
     return () => {
-
       socket.off("room-joined");
       socket.off("user-joined");
       socket.off("user-left");
       socket.off("chat-message");
       socket.off("interview-ended");
-
     };
 
   }, [roomId, user, navigate]);
@@ -124,7 +119,7 @@ const InterviewRoom = () => {
   };
 
   // ==============================
-  // SEND CHAT MESSAGE
+  // CHAT MESSAGE
   // ==============================
 
   const sendMessage = () => {
@@ -137,6 +132,22 @@ const InterviewRoom = () => {
     });
 
     setMessageInput("");
+
+  };
+
+  // ==============================
+  // COPY INVITE LINK
+  // ==============================
+
+  const copyInviteLink = () => {
+
+    navigator.clipboard.writeText(inviteLink);
+
+    setCopied(true);
+
+    setTimeout(() => {
+      setCopied(false);
+    }, 2000);
 
   };
 
@@ -163,11 +174,9 @@ const InterviewRoom = () => {
   if (roomLoading) {
 
     return (
-
       <div className="h-screen bg-gray-900 flex items-center justify-center">
         <p className="text-white text-lg">Loading interview room...</p>
       </div>
-
     );
 
   }
@@ -175,11 +184,9 @@ const InterviewRoom = () => {
   if (roomError) {
 
     return (
-
       <div className="h-screen bg-gray-900 flex items-center justify-center">
         <p className="text-red-400">{roomError}</p>
       </div>
-
     );
 
   }
@@ -193,10 +200,8 @@ const InterviewRoom = () => {
       <div className="bg-gray-800 text-white p-4 flex justify-between items-center">
 
         <div>
-
           <h1 className="text-xl font-bold">Interview Room</h1>
           <p className="text-sm text-gray-400">Room ID: {roomId}</p>
-
         </div>
 
         <div className="flex items-center gap-6">
@@ -208,18 +213,31 @@ const InterviewRoom = () => {
           <div className="text-sm">
 
             <p className="font-semibold">
-              {roomUsers.length} participant(s)
+              {roomUsers.length}/5 participants
             </p>
 
             {roomUsers.map((u) => (
-
               <span key={u.socketId} className="block text-gray-400">
                 {u.userName}
               </span>
-
             ))}
 
           </div>
+
+          {/* INVITE BUTTON */}
+
+          {roomUsers.length < 5 && (
+
+            <button
+              onClick={() => setShowInviteModal(true)}
+              className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
+            >
+              Invite Candidate
+            </button>
+
+          )}
+
+          {/* END INTERVIEW */}
 
           {user?.role === "interviewer" && (
 
@@ -240,23 +258,19 @@ const InterviewRoom = () => {
 
       <div className="flex-1 flex gap-4 p-4 overflow-hidden">
 
-        {/* VIDEO CALL */}
+        {/* VIDEO */}
 
         <div className="flex-1 flex flex-col">
-
           <VideoCall roomId={roomId} ref={videoCallRef} />
-
         </div>
 
         {/* CODE EDITOR */}
 
         <div className="flex-1 flex flex-col">
-
           <CodeEditor roomId={roomId} />
-
         </div>
 
-        {/* CHAT PANEL */}
+        {/* CHAT */}
 
         <div className="w-80 bg-gray-800 rounded-lg flex flex-col">
 
@@ -273,7 +287,6 @@ const InterviewRoom = () => {
                 <span className="font-semibold text-blue-400">
                   {msg.senderName || "User"}:
                 </span>{" "}
-
                 {msg.message}
 
               </div>
@@ -303,6 +316,52 @@ const InterviewRoom = () => {
         </div>
 
       </div>
+
+      {/* INVITE MODAL */}
+
+      {showInviteModal && (
+
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center">
+
+          <div className="bg-white rounded-lg p-6 w-96">
+
+            <h2 className="text-xl font-bold mb-4">
+              Invite Candidate
+            </h2>
+
+            <p className="text-sm text-gray-600 mb-2">
+              Share this link with candidate
+            </p>
+
+            <div className="flex gap-2">
+
+              <input
+                value={inviteLink}
+                readOnly
+                className="flex-1 border p-2 rounded text-sm"
+              />
+
+              <button
+                onClick={copyInviteLink}
+                className="bg-green-600 text-white px-3 py-2 rounded"
+              >
+                {copied ? "Copied" : "Copy"}
+              </button>
+
+            </div>
+
+            <button
+              onClick={() => setShowInviteModal(false)}
+              className="mt-4 w-full bg-gray-700 text-white py-2 rounded"
+            >
+              Close
+            </button>
+
+          </div>
+
+        </div>
+
+      )}
 
       {/* RATING PANEL */}
 
