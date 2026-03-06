@@ -28,5 +28,9 @@
   "license": "MIT",
   "devDependencies": {
     "concurrently": "^8.2.0"
+  },
+  "dependencies": {
+    "buffer": "^6.0.3",
+    "simple-peer": "^9.11.1"
   }
 }

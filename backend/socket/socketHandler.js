@@ -5,17 +5,22 @@ export const initializeSocketHandlers = (io) => {
 
   io.on('connection', (socket) => {
 
-    console.log('New user connected:', socket.id)
-
+    console.log('User connected:', socket.id)
 
     // ==============================
     // JOIN ROOM
     // ==============================
-    socket.on('join-room', async (data) => {
+    socket.on('join-room', async ({ roomId, userId, userName }) => {
 
       try {
 
-        const { roomId, userId, userName } = data
+        const roomSockets = io.sockets.adapter.rooms.get(roomId)
+
+        // Limit room to 5 participants
+        if (roomSockets && roomSockets.size >= 5) {
+          socket.emit('room-full')
+          return
+        }
 
         socket.join(roomId)
 
@@ -28,29 +33,16 @@ export const initializeSocketHandlers = (io) => {
           await interview.save()
         }
 
+        // Send existing users to new user
+        const users = roomSockets ? Array.from(roomSockets) : []
+
+        socket.emit('existing-users', users)
+
+        // Notify others
         socket.to(roomId).emit('user-joined', {
           socketId: socket.id,
           userId,
           userName
-        })
-
-        const roomSockets = io.sockets.adapter.rooms.get(roomId)
-
-        const users = Array.from(roomSockets || []).map((socketId) => {
-
-          const socketObj = io.sockets.sockets.get(socketId)
-
-          return {
-            socketId,
-            userId: socketObj?.data?.userId,
-            userName: socketObj?.data?.userName
-          }
-
-        })
-
-        io.to(roomId).emit('room-joined', {
-          users,
-          message: `${userName} joined`
         })
 
       } catch (err) {
@@ -144,9 +136,12 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // WEBRTC OFFER
     // ==============================
-    socket.on('offer', ({ roomId, offer }) => {
+    socket.on('offer', ({ targetSocketId, offer }) => {
 
-      socket.to(roomId).emit('offer', { offer })
+      io.to(targetSocketId).emit('offer', {
+        offer,
+        from: socket.id
+      })
 
     })
 
@@ -154,9 +149,12 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // WEBRTC ANSWER
     // ==============================
-    socket.on('answer', ({ roomId, answer }) => {
+    socket.on('answer', ({ targetSocketId, answer }) => {
 
-      socket.to(roomId).emit('answer', { answer })
+      io.to(targetSocketId).emit('answer', {
+        answer,
+        from: socket.id
+      })
 
     })
 
@@ -164,9 +162,12 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // ICE CANDIDATE
     // ==============================
-    socket.on('ice-candidate', ({ roomId, candidate }) => {
+    socket.on('ice-candidate', ({ targetSocketId, candidate }) => {
 
-      socket.to(roomId).emit('ice-candidate', { candidate })
+      io.to(targetSocketId).emit('ice-candidate', {
+        candidate,
+        from: socket.id
+      })
 
     })
 
@@ -210,21 +211,9 @@ export const initializeSocketHandlers = (io) => {
 
       if (!roomId) return
 
-      const roomSockets = io.sockets.adapter.rooms.get(roomId)
-
-      const users = Array.from(roomSockets || []).map((socketId) => {
-
-        const socketObj = io.sockets.sockets.get(socketId)
-
-        return {
-          socketId,
-          userId: socketObj?.data?.userId,
-          userName: socketObj?.data?.userName
-        }
-
+      socket.to(roomId).emit('user-left', {
+        socketId: socket.id
       })
-
-      io.to(roomId).emit('user-left', { users })
 
     })
 
