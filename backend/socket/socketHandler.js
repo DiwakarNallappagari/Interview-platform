@@ -16,7 +16,7 @@ export const initializeSocketHandlers = (io) => {
 
         const roomSockets = io.sockets.adapter.rooms.get(roomId)
 
-        // Limit room to 5 participants
+        // Limit room to 5 users
         if (roomSockets && roomSockets.size >= 5) {
           socket.emit('room-full')
           return
@@ -33,12 +33,10 @@ export const initializeSocketHandlers = (io) => {
           await interview.save()
         }
 
-        // Send existing users to new user
         const users = roomSockets ? Array.from(roomSockets) : []
 
         socket.emit('existing-users', users)
 
-        // Notify others
         socket.to(roomId).emit('user-joined', {
           socketId: socket.id,
           userId,
@@ -136,9 +134,9 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // WEBRTC OFFER
     // ==============================
-    socket.on('offer', ({ targetSocketId, offer }) => {
+    socket.on('offer', ({ roomId, offer }) => {
 
-      io.to(targetSocketId).emit('offer', {
+      socket.to(roomId).emit('offer', {
         offer,
         from: socket.id
       })
@@ -149,9 +147,9 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // WEBRTC ANSWER
     // ==============================
-    socket.on('answer', ({ targetSocketId, answer }) => {
+    socket.on('answer', ({ roomId, answer }) => {
 
-      io.to(targetSocketId).emit('answer', {
+      socket.to(roomId).emit('answer', {
         answer,
         from: socket.id
       })
@@ -162,9 +160,9 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // ICE CANDIDATE
     // ==============================
-    socket.on('ice-candidate', ({ targetSocketId, candidate }) => {
+    socket.on('ice-candidate', ({ roomId, candidate }) => {
 
-      io.to(targetSocketId).emit('ice-candidate', {
+      socket.to(roomId).emit('ice-candidate', {
         candidate,
         from: socket.id
       })

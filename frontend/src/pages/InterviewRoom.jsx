@@ -47,6 +47,7 @@ const InterviewRoom = () => {
       } catch (err) {
 
         setRoomError("Room not found or access denied");
+        setRoomLoading(false);
 
       }
 
@@ -73,33 +74,54 @@ const InterviewRoom = () => {
     });
 
     socket.on("room-joined", (data) => {
+
       setRoomUsers(data.users || []);
       setRoomLoading(false);
+
     });
 
     socket.on("user-joined", (data) => {
+
       setRoomUsers(data.users || []);
+
     });
 
     socket.on("user-left", (data) => {
+
       setRoomUsers(data.users || []);
+
     });
 
     socket.on("chat-message", (msg) => {
+
       setMessages(prev => [...prev, msg]);
+
     });
 
     socket.on("interview-ended", () => {
+
       stopEverything();
       navigate("/dashboard");
+
     });
 
+    // fallback if socket event doesn't fire
+    const fallback = setTimeout(() => {
+
+      setRoomLoading(false);
+
+    }, 2000);
+
     return () => {
+
+      clearTimeout(fallback);
+
       socket.off("room-joined");
       socket.off("user-joined");
       socket.off("user-left");
       socket.off("chat-message");
       socket.off("interview-ended");
+
     };
 
   }, [roomId, user, navigate]);
@@ -213,7 +235,7 @@ const InterviewRoom = () => {
           <div className="text-sm">
 
             <p className="font-semibold">
-              {roomUsers.length}/5 participants
+              {roomUsers.length}/2 participants
             </p>
 
             {roomUsers.map((u) => (
@@ -226,7 +248,7 @@ const InterviewRoom = () => {
 
           {/* INVITE BUTTON */}
 
-          {roomUsers.length < 5 && (
+          {roomUsers.length < 2 && (
 
             <button
               onClick={() => setShowInviteModal(true)}
@@ -258,13 +280,9 @@ const InterviewRoom = () => {
 
       <div className="flex-1 flex gap-4 p-4 overflow-hidden">
 
-        {/* VIDEO */}
-
         <div className="flex-1 flex flex-col">
           <VideoCall roomId={roomId} ref={videoCallRef} />
         </div>
-
-        {/* CODE EDITOR */}
 
         <div className="flex-1 flex flex-col">
           <CodeEditor roomId={roomId} />
@@ -328,10 +346,6 @@ const InterviewRoom = () => {
             <h2 className="text-xl font-bold mb-4">
               Invite Candidate
             </h2>
-
-            <p className="text-sm text-gray-600 mb-2">
-              Share this link with candidate
-            </p>
 
             <div className="flex gap-2">
 

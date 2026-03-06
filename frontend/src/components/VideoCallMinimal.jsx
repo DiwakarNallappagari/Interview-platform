@@ -10,6 +10,9 @@ const VideoCallMinimal = ({ roomId }) => {
   const localStreamRef = useRef(null);
 
   const [remoteStream, setRemoteStream] = useState(null);
+  const [cameraOn, setCameraOn] = useState(true);
+  const [micOn, setMicOn] = useState(true);
+  const [screenSharing, setScreenSharing] = useState(false);
 
   useEffect(() => {
 
@@ -79,15 +82,10 @@ const VideoCallMinimal = ({ roomId }) => {
 
     startCall();
 
-
-
-    // ========================
     // USER JOINED
-    // ========================
     socket.on("user-joined", async () => {
 
       const pc = peerConnectionRef.current;
-
       if (!pc) return;
 
       const offer = await pc.createOffer();
@@ -97,15 +95,10 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-
-
-    // ========================
     // RECEIVE OFFER
-    // ========================
     socket.on("offer", async ({ offer }) => {
 
       const pc = peerConnectionRef.current;
-
       if (!pc) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
@@ -117,30 +110,20 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-
-
-    // ========================
     // RECEIVE ANSWER
-    // ========================
     socket.on("answer", async ({ answer }) => {
 
       const pc = peerConnectionRef.current;
-
       if (!pc) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
     });
 
-
-
-    // ========================
     // ICE CANDIDATE
-    // ========================
     socket.on("ice-candidate", async ({ candidate }) => {
 
       const pc = peerConnectionRef.current;
-
       if (!pc) return;
 
       try {
@@ -150,8 +133,6 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
     });
-
-
 
     return () => {
 
@@ -172,7 +153,78 @@ const VideoCallMinimal = ({ roomId }) => {
 
   }, [roomId]);
 
+  // CAMERA TOGGLE
+  const toggleCamera = () => {
 
+    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+    if (!videoTrack) return;
+
+    const newState = !videoTrack.enabled;
+
+    videoTrack.enabled = newState;
+    setCameraOn(newState);
+
+  };
+
+  // MIC TOGGLE
+  const toggleMic = () => {
+
+    const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+    if (!audioTrack) return;
+
+    const newState = !audioTrack.enabled;
+
+    audioTrack.enabled = newState;
+    setMicOn(newState);
+
+  };
+
+  // SCREEN SHARE
+  const toggleScreenShare = async () => {
+
+    if (!screenSharing) {
+
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true
+      });
+
+      const screenTrack = screenStream.getVideoTracks()[0];
+
+      const sender = peerConnectionRef.current
+        .getSenders()
+        .find(s => s.track.kind === "video");
+
+      if (sender) sender.replaceTrack(screenTrack);
+
+      localVideoRef.current.srcObject = screenStream;
+
+      screenTrack.onended = stopScreenShare;
+
+      setScreenSharing(true);
+
+    } else {
+
+      stopScreenShare();
+
+    }
+
+  };
+
+  const stopScreenShare = () => {
+
+    const videoTrack = localStreamRef.current.getVideoTracks()[0];
+
+    const sender = peerConnectionRef.current
+      .getSenders()
+      .find(s => s.track.kind === "video");
+
+    if (sender) sender.replaceTrack(videoTrack);
+
+    localVideoRef.current.srcObject = localStreamRef.current;
+
+    setScreenSharing(false);
+
+  };
 
   return (
 
@@ -200,8 +252,34 @@ const VideoCallMinimal = ({ roomId }) => {
           autoPlay
           muted
           playsInline
-          className="absolute bottom-5 right-5 w-64 rounded bg-black"
+          className="absolute bottom-5 right-5 w-64 rounded bg-black border"
         />
+
+      </div>
+
+      {/* Controls */}
+      <div className="flex justify-center gap-4 p-3 bg-gray-900">
+
+        <button
+          onClick={toggleCamera}
+          className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-white"
+        >
+          {cameraOn ? "Camera On" : "Camera Off"}
+        </button>
+
+        <button
+          onClick={toggleMic}
+          className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-white"
+        >
+          {micOn ? "Mic On" : "Mic Off"}
+        </button>
+
+        <button
+          onClick={toggleScreenShare}
+          className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-white"
+        >
+          {screenSharing ? "Stop Share" : "Share Screen"}
+        </button>
 
       </div>
 
