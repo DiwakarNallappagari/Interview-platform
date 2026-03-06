@@ -14,10 +14,10 @@ export const initializeSocketHandlers = (io) => {
 
       try {
 
-        const roomSockets = io.sockets.adapter.rooms.get(roomId)
+        const room = io.sockets.adapter.rooms.get(roomId)
 
         // Limit room to 5 users
-        if (roomSockets && roomSockets.size >= 5) {
+        if (room && room.size >= 5) {
           socket.emit('room-full')
           return
         }
@@ -26,17 +26,31 @@ export const initializeSocketHandlers = (io) => {
 
         socket.data = { userId, userName, roomId }
 
+        // Save candidate in DB
         const interview = await Interview.findOne({ roomId })
 
-        if (interview && !interview.candidate && userId !== interview.interviewer.toString()) {
+        if (
+          interview &&
+          !interview.candidate &&
+          userId !== interview.interviewer.toString()
+        ) {
           interview.candidate = userId
           await interview.save()
         }
 
-        const users = roomSockets ? Array.from(roomSockets) : []
+        // Get all users currently in room
+        const clients = await io.in(roomId).fetchSockets()
 
+        const users = clients.map(s => ({
+          socketId: s.id,
+          userId: s.data?.userId,
+          userName: s.data?.userName
+        }))
+
+        // Send existing users to new user
         socket.emit('existing-users', users)
 
+        // Notify others
         socket.to(roomId).emit('user-joined', {
           socketId: socket.id,
           userId,
