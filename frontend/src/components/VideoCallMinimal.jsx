@@ -31,20 +31,13 @@ const VideoCallMinimal = ({ roomId }) => {
           localVideoRef.current.srcObject = stream;
         }
 
-        // IMPORTANT: Added TURN + multiple STUN servers
         const pc = new RTCPeerConnection({
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
             { urls: "stun:stun2.l.google.com:19302" },
-
             {
               urls: "turn:openrelay.metered.ca:80",
-              username: "openrelayproject",
-              credential: "openrelayproject"
-            },
-            {
-              urls: "turn:openrelay.metered.ca:443",
               username: "openrelayproject",
               credential: "openrelayproject"
             }
@@ -96,6 +89,25 @@ const VideoCallMinimal = ({ roomId }) => {
 
     startCall();
 
+
+    // IMPORTANT: HANDLE EXISTING USERS
+    socket.on("existing-users", async (users) => {
+
+      const pc = peerConnectionRef.current;
+      if (!pc) return;
+
+      if (users.length > 0) {
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        socket.emit("offer", { roomId, offer });
+
+      }
+
+    });
+
+
     // USER JOINED
     socket.on("user-joined", async () => {
 
@@ -108,6 +120,7 @@ const VideoCallMinimal = ({ roomId }) => {
       socket.emit("offer", { roomId, offer });
 
     });
+
 
     // RECEIVE OFFER
     socket.on("offer", async ({ offer }) => {
@@ -124,6 +137,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
+
     // RECEIVE ANSWER
     socket.on("answer", async ({ answer }) => {
 
@@ -133,6 +147,7 @@ const VideoCallMinimal = ({ roomId }) => {
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
     });
+
 
     // ICE CANDIDATE
     socket.on("ice-candidate", async ({ candidate }) => {
@@ -148,8 +163,10 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
+
     return () => {
 
+      socket.off("existing-users");
       socket.off("user-joined");
       socket.off("offer");
       socket.off("answer");
@@ -167,31 +184,30 @@ const VideoCallMinimal = ({ roomId }) => {
 
   }, [roomId]);
 
+
   // CAMERA TOGGLE
   const toggleCamera = () => {
 
-    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
-    if (!videoTrack) return;
+    const track = localStreamRef.current?.getVideoTracks()[0];
+    if (!track) return;
 
-    const newState = !videoTrack.enabled;
-
-    videoTrack.enabled = newState;
-    setCameraOn(newState);
+    track.enabled = !track.enabled;
+    setCameraOn(track.enabled);
 
   };
+
 
   // MIC TOGGLE
   const toggleMic = () => {
 
-    const audioTrack = localStreamRef.current?.getAudioTracks()[0];
-    if (!audioTrack) return;
+    const track = localStreamRef.current?.getAudioTracks()[0];
+    if (!track) return;
 
-    const newState = !audioTrack.enabled;
-
-    audioTrack.enabled = newState;
-    setMicOn(newState);
+    track.enabled = !track.enabled;
+    setMicOn(track.enabled);
 
   };
+
 
   // SCREEN SHARE
   const toggleScreenShare = async () => {
@@ -205,8 +221,8 @@ const VideoCallMinimal = ({ roomId }) => {
       const screenTrack = screenStream.getVideoTracks()[0];
 
       const sender = peerConnectionRef.current
-        .getSenders()
-        .find(s => s.track.kind === "video");
+        ?.getSenders()
+        .find(s => s.track?.kind === "video");
 
       if (sender) sender.replaceTrack(screenTrack);
 
@@ -224,21 +240,23 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
+
   const stopScreenShare = () => {
 
-    const videoTrack = localStreamRef.current.getVideoTracks()[0];
+    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
 
     const sender = peerConnectionRef.current
-      .getSenders()
-      .find(s => s.track.kind === "video");
+      ?.getSenders()
+      .find(s => s.track?.kind === "video");
 
-    if (sender) sender.replaceTrack(videoTrack);
+    if (sender && videoTrack) sender.replaceTrack(videoTrack);
 
     localVideoRef.current.srcObject = localStreamRef.current;
 
     setScreenSharing(false);
 
   };
+
 
   return (
 
@@ -254,7 +272,7 @@ const VideoCallMinimal = ({ roomId }) => {
         />
 
         {!remoteStream && (
-          <div className="absolute inset-0 flex items-center justify-center text-white text-lg">
+          <div className="absolute inset-0 flex items-center justify-center text-white">
             Waiting for candidate...
           </div>
         )}
@@ -264,7 +282,7 @@ const VideoCallMinimal = ({ roomId }) => {
           autoPlay
           muted
           playsInline
-          className="absolute bottom-5 right-5 w-64 rounded bg-black border"
+          className="absolute bottom-5 right-5 w-64 rounded border"
         />
 
       </div>
@@ -273,21 +291,21 @@ const VideoCallMinimal = ({ roomId }) => {
 
         <button
           onClick={toggleCamera}
-          className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-white"
+          className="bg-gray-700 px-4 py-2 rounded text-white"
         >
           {cameraOn ? "Camera On" : "Camera Off"}
         </button>
 
         <button
           onClick={toggleMic}
-          className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-white"
+          className="bg-gray-700 px-4 py-2 rounded text-white"
         >
           {micOn ? "Mic On" : "Mic Off"}
         </button>
 
         <button
           onClick={toggleScreenShare}
-          className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded text-white"
+          className="bg-gray-700 px-4 py-2 rounded text-white"
         >
           {screenSharing ? "Stop Share" : "Share Screen"}
         </button>
