@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import Peer from "simple-peer";
 import socket from "../utils/socket";
 
 const VideoCallMinimal = ({ roomId }) => {
 
-  const [peers, setPeers] = useState([]);
-  const userVideo = useRef(null);
-  const peersRef = useRef([]);
-  const streamRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+
+  const peerConnectionRef = useRef(null);
+  const localStreamRef = useRef(null);
+
+  const [remoteStream, setRemoteStream] = useState(null);
 
   useEffect(() => {
 
-    let mounted = true;
-
-    const startMedia = async () => {
+    const startCall = async () => {
 
       try {
 
@@ -22,13 +22,48 @@ const VideoCallMinimal = ({ roomId }) => {
           audio: true
         });
 
-        if (!mounted) return;
+        localStreamRef.current = stream;
 
-        streamRef.current = stream;
-
-        if (userVideo.current) {
-          userVideo.current.srcObject = stream;
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
         }
+
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: "stun:stun.l.google.com:19302" }
+          ]
+        });
+
+        peerConnectionRef.current = pc;
+
+        stream.getTracks().forEach(track => {
+          pc.addTrack(track, stream);
+        });
+
+        pc.ontrack = (event) => {
+
+          const remote = event.streams[0];
+
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = remote;
+          }
+
+          setRemoteStream(remote);
+
+        };
+
+        pc.onicecandidate = (event) => {
+
+          if (event.candidate) {
+
+            socket.emit("ice-candidate", {
+              roomId,
+              candidate: event.candidate
+            });
+
+          }
+
+        };
 
         socket.emit("join-room", {
           roomId,
@@ -37,109 +72,100 @@ const VideoCallMinimal = ({ roomId }) => {
         });
 
       } catch (err) {
-        console.error("Camera/Mic error:", err);
+        console.error("Media error:", err);
       }
 
     };
 
-    startMedia();
+    startCall();
 
 
-    // ==============================
-    // Existing users already in room
-    // ==============================
-    const handleExistingUsers = (users) => {
 
-      const peersArray = [];
+    // ========================
+    // USER JOINED
+    // ========================
+    socket.on("user-joined", async () => {
 
-      users.forEach(userID => {
+      const pc = peerConnectionRef.current;
 
-        const peer = createPeer(userID, socket.id, streamRef.current);
+      if (!pc) return;
 
-        peersRef.current.push({
-          peerID: userID,
-          peer
-        });
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
 
-        peersArray.push(peer);
+      socket.emit("offer", { roomId, offer });
 
-      });
-
-      setPeers(peersArray);
-
-    };
+    });
 
 
-    // ==============================
-    // New user joined
-    // ==============================
-    const handleUserJoined = (payload) => {
 
-      const peer = addPeer(payload.socketId, streamRef.current);
+    // ========================
+    // RECEIVE OFFER
+    // ========================
+    socket.on("offer", async ({ offer }) => {
 
-      peersRef.current.push({
-        peerID: payload.socketId,
-        peer
-      });
+      const pc = peerConnectionRef.current;
 
-      setPeers(prev => [...prev, peer]);
+      if (!pc) return;
 
-    };
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
 
-    // ==============================
-    // Receive WebRTC signals
-    // ==============================
-    const handleOffer = (payload) => {
+      socket.emit("answer", { roomId, answer });
 
-      const item = peersRef.current.find(p => p.peerID === payload.from);
-
-      if (item) item.peer.signal(payload.offer);
-
-    };
-
-    const handleAnswer = (payload) => {
-
-      const item = peersRef.current.find(p => p.peerID === payload.from);
-
-      if (item) item.peer.signal(payload.answer);
-
-    };
-
-    const handleIceCandidate = (payload) => {
-
-      const item = peersRef.current.find(p => p.peerID === payload.from);
-
-      if (item) item.peer.signal(payload.candidate);
-
-    };
+    });
 
 
-    socket.on("existing-users", handleExistingUsers);
-    socket.on("user-joined", handleUserJoined);
-    socket.on("offer", handleOffer);
-    socket.on("answer", handleAnswer);
-    socket.on("ice-candidate", handleIceCandidate);
+
+    // ========================
+    // RECEIVE ANSWER
+    // ========================
+    socket.on("answer", async ({ answer }) => {
+
+      const pc = peerConnectionRef.current;
+
+      if (!pc) return;
+
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+
+    });
+
+
+
+    // ========================
+    // ICE CANDIDATE
+    // ========================
+    socket.on("ice-candidate", async ({ candidate }) => {
+
+      const pc = peerConnectionRef.current;
+
+      if (!pc) return;
+
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.error("ICE error:", err);
+      }
+
+    });
+
 
 
     return () => {
 
-      mounted = false;
+      socket.off("user-joined");
+      socket.off("offer");
+      socket.off("answer");
+      socket.off("ice-candidate");
 
-      socket.off("existing-users", handleExistingUsers);
-      socket.off("user-joined", handleUserJoined);
-      socket.off("offer", handleOffer);
-      socket.off("answer", handleAnswer);
-      socket.off("ice-candidate", handleIceCandidate);
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+      }
 
-      const peers = peersRef.current;
-
-      peers.forEach(p => {
-        if (p.peer) p.peer.destroy();
-      });
-
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
       }
 
     };
@@ -148,112 +174,41 @@ const VideoCallMinimal = ({ roomId }) => {
 
 
 
-  // ==============================
-  // Create peer (initiator)
-  // ==============================
-  function createPeer(userToSignal, callerID, stream) {
-
-    const peer = new Peer({
-      initiator: true,
-      trickle: false,
-      stream
-    });
-
-    peer.on("signal", signal => {
-
-      socket.emit("offer", {
-        targetSocketId: userToSignal,
-        offer: signal
-      });
-
-    });
-
-    return peer;
-
-  }
-
-
-
-  // ==============================
-  // Add peer (receiver)
-  // ==============================
-  function addPeer(incomingID, stream) {
-
-    const peer = new Peer({
-      initiator: false,
-      trickle: false,
-      stream
-    });
-
-    peer.on("signal", signal => {
-
-      socket.emit("answer", {
-        targetSocketId: incomingID,
-        answer: signal
-      });
-
-    });
-
-    return peer;
-
-  }
-
-
-
   return (
 
-    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 p-4">
+    <div className="bg-black flex flex-col h-full">
 
-      {/* Local video */}
-      <video
-        muted
-        ref={userVideo}
-        autoPlay
-        playsInline
-        className="rounded bg-black"
-      />
+      <div className="flex-1 relative">
 
-      {/* Remote videos */}
-      {peers.map((peer, index) => (
-        <Video key={index} peer={peer} />
-      ))}
+        {/* Remote Video */}
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className="w-full h-full object-cover"
+        />
+
+        {!remoteStream && (
+          <div className="absolute inset-0 flex items-center justify-center text-white text-lg">
+            Waiting for candidate...
+          </div>
+        )}
+
+        {/* Local Video */}
+        <video
+          ref={localVideoRef}
+          autoPlay
+          muted
+          playsInline
+          className="absolute bottom-5 right-5 w-64 rounded bg-black"
+        />
+
+      </div>
 
     </div>
 
   );
 
 };
-
-
-
-const Video = ({ peer }) => {
-
-  const ref = useRef(null);
-
-  useEffect(() => {
-
-    if (!peer) return;
-
-    peer.on("stream", stream => {
-
-      if (ref.current) {
-        ref.current.srcObject = stream;
-      }
-
-    });
-
-  }, [peer]);
-
-  return (
-    <video
-      playsInline
-      autoPlay
-      ref={ref}
-      className="rounded bg-black"
-    />
-  );
-
-};
-
 
 export default VideoCallMinimal;
