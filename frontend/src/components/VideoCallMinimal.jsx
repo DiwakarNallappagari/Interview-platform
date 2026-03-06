@@ -31,9 +31,23 @@ const VideoCallMinimal = ({ roomId }) => {
           localVideoRef.current.srcObject = stream;
         }
 
+        // IMPORTANT: Added TURN + multiple STUN servers
         const pc = new RTCPeerConnection({
           iceServers: [
-            { urls: "stun:stun.l.google.com:19302" }
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+            { urls: "stun:stun2.l.google.com:19302" },
+
+            {
+              urls: "turn:openrelay.metered.ca:80",
+              username: "openrelayproject",
+              credential: "openrelayproject"
+            },
+            {
+              urls: "turn:openrelay.metered.ca:443",
+              username: "openrelayproject",
+              credential: "openrelayproject"
+            }
           ]
         });
 
@@ -232,7 +246,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
       <div className="flex-1 relative">
 
-        {/* Remote Video */}
         <video
           ref={remoteVideoRef}
           autoPlay
@@ -246,7 +259,6 @@ const VideoCallMinimal = ({ roomId }) => {
           </div>
         )}
 
-        {/* Local Video */}
         <video
           ref={localVideoRef}
           autoPlay
@@ -257,7 +269,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
       </div>
 
-      {/* Controls */}
       <div className="flex justify-center gap-4 p-3 bg-gray-900">
 
         <button
