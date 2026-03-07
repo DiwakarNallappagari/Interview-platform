@@ -54,52 +54,62 @@ const InterviewRoom = () => {
     });
 
     // Initial users
-    socket.on("room-joined", (data) => {
+    const handleRoomJoined = (data) => {
       setRoomUsers(data.users || []);
-    });
+    };
 
-    // New user joined
-    socket.on("user-joined", (data) => {
+    // New user
+    const handleUserJoined = (data) => {
       setRoomUsers(prev => [...prev, data]);
-    });
+    };
 
     // User left
-    socket.on("user-left", ({ socketId }) => {
+    const handleUserLeft = ({ socketId }) => {
       setRoomUsers(prev =>
-        prev.filter(user => user.socketId !== socketId)
+        prev.filter(u => u.socketId !== socketId)
       );
-    });
+    };
 
-    // Chat message
-    socket.on("chat-message", (msg) => {
+    // Chat
+    const handleChat = (msg) => {
       setMessages(prev => [...prev, msg]);
-    });
+    };
 
     // Interview ended
-    socket.on("interview-ended", () => {
-
-      socket.disconnect();
+    const handleInterviewEnded = () => {
 
       alert("Interview has ended");
 
-      navigate("/");
+      setTimeout(() => {
 
-    });
+        socket.disconnect();
+
+        navigate("/");
+
+      }, 500);
+
+    };
+
+    socket.on("room-joined", handleRoomJoined);
+    socket.on("user-joined", handleUserJoined);
+    socket.on("user-left", handleUserLeft);
+    socket.on("chat-message", handleChat);
+    socket.on("interview-ended", handleInterviewEnded);
 
     return () => {
 
-      socket.off("room-joined");
-      socket.off("user-joined");
-      socket.off("user-left");
-      socket.off("chat-message");
-      socket.off("interview-ended");
+      socket.off("room-joined", handleRoomJoined);
+      socket.off("user-joined", handleUserJoined);
+      socket.off("user-left", handleUserLeft);
+      socket.off("chat-message", handleChat);
+      socket.off("interview-ended", handleInterviewEnded);
 
     };
 
   }, [roomId, user, navigate]);
 
   // ==============================
-  // CHAT
+  // SEND CHAT
   // ==============================
 
   const sendMessage = () => {
@@ -126,9 +136,7 @@ const InterviewRoom = () => {
 
     setCopied(true);
 
-    setTimeout(() => {
-      setCopied(false);
-    }, 2000);
+    setTimeout(() => setCopied(false), 2000);
 
   };
 
@@ -138,18 +146,16 @@ const InterviewRoom = () => {
 
   const handleEndInterview = () => {
 
-    if (user?.role === "interviewer") {
+    if (user?.role !== "interviewer") return;
 
-      socket.emit("end-interview", { roomId });
+    socket.emit("end-interview", { roomId });
 
-      setShowRating(true);
-
-    }
+    setShowRating(true);
 
   };
 
   // ==============================
-  // LOADING
+  // LOADING SCREEN
   // ==============================
 
   if (roomLoading) {
