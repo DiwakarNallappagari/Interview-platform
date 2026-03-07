@@ -24,7 +24,9 @@ const Register = () => {
 
     }catch(err){
 
-      alert("Register failed");
+      console.log("Register error:", err.response?.data);
+
+      alert(err.response?.data?.message || "Register failed");
 
     }
 
@@ -36,42 +38,53 @@ const Register = () => {
 
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded shadow w-80">
 
-        <h2 className="text-xl font-bold mb-4">Register</h2>
+        <h2 className="text-xl font-bold mb-4 text-center">Register</h2>
 
+        {/* NAME */}
+        <label className="text-sm font-medium">Name</label>
         <input
           type="text"
-          placeholder="Name"
+          placeholder="Enter your name"
           value={name}
           onChange={(e)=>setName(e.target.value)}
-          className="w-full p-2 border mb-3"
+          className="w-full p-2 border mb-3 rounded"
+          required
         />
 
+        {/* EMAIL */}
+        <label className="text-sm font-medium">Email</label>
         <input
           type="email"
-          placeholder="Email"
+          placeholder="Enter your email"
           value={email}
           onChange={(e)=>setEmail(e.target.value)}
-          className="w-full p-2 border mb-3"
+          className="w-full p-2 border mb-3 rounded"
+          required
         />
 
+        {/* PASSWORD */}
+        <label className="text-sm font-medium">Password</label>
         <input
           type="password"
-          placeholder="Password"
+          placeholder="Enter password"
           value={password}
           onChange={(e)=>setPassword(e.target.value)}
-          className="w-full p-2 border mb-3"
+          className="w-full p-2 border mb-3 rounded"
+          required
         />
 
+        {/* ROLE */}
+        <label className="text-sm font-medium">Role</label>
         <select
           value={role}
           onChange={(e)=>setRole(e.target.value)}
-          className="w-full p-2 border mb-3"
+          className="w-full p-2 border mb-4 rounded"
         >
           <option value="interviewer">Interviewer</option>
           <option value="candidate">Candidate</option>
         </select>
 
-        <button className="w-full bg-blue-600 text-white py-2">
+        <button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded">
           Register
         </button>
 
