@@ -23,18 +23,14 @@ const Dashboard = () => {
     <>
       <Navbar />
 
-      <div className="p-6">
-
+      <div style={{ padding: "30px", background: "#f3f4f6", minHeight: "100vh" }}>
         {interviews.length === 0 ? (
           <p>No interviews yet</p>
         ) : (
           interviews.map((interview) => (
-            <div key={interview._id}>
-              {interview.roomId}
-            </div>
+            <div key={interview._id}>{interview.roomId}</div>
           ))
         )}
-
       </div>
     </>
   );
