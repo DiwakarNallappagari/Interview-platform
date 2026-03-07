@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import Navbar from "../components/Navbar";
 import API from "../utils/api";
 
 const Dashboard = () => {
@@ -20,19 +19,15 @@ const Dashboard = () => {
   };
 
   return (
-    <>
-      <Navbar />
-
-      <div style={{ padding: "30px", background: "#f3f4f6", minHeight: "100vh" }}>
-        {interviews.length === 0 ? (
-          <p>No interviews yet</p>
-        ) : (
-          interviews.map((interview) => (
-            <div key={interview._id}>{interview.roomId}</div>
-          ))
-        )}
-      </div>
-    </>
+    <div style={{ padding: "30px", background: "#f3f4f6", minHeight: "100vh" }}>
+      {interviews.length === 0 ? (
+        <p>No interviews yet</p>
+      ) : (
+        interviews.map((interview) => (
+          <div key={interview._id}>{interview.roomId}</div>
+        ))
+      )}
+    </div>
   );
 };
 
