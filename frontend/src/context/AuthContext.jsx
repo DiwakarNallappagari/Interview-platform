@@ -1,68 +1,81 @@
-import React, { createContext, useState, useEffect } from 'react'
-import API from '../utils/api'
+import React, { createContext, useState, useEffect } from "react";
+import API from "../utils/api";
 
-export const AuthContext = createContext()
+export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    const userData = localStorage.getItem('user')
+
+    const token = localStorage.getItem("token");
+    const userData = localStorage.getItem("user");
 
     if (token && userData) {
-      setUser(JSON.parse(userData))
-      setIsAuthenticated(true)
-      API.defaults.headers.common['Authorization'] = `Bearer ${token}`
+      setUser(JSON.parse(userData));
+      setIsAuthenticated(true);
+
+      API.defaults.headers.common["Authorization"] = `Bearer ${token}`;
     }
 
-    setLoading(false)
-  }, [])
+    setLoading(false);
 
+  }, []);
+
+  // LOGIN
   const login = async (email, password) => {
-    const { data } = await API.post('/auth/login', { email, password })
 
-    localStorage.setItem('token', data.token)
-    localStorage.setItem('user', JSON.stringify(data.user))
+    const { data } = await API.post("/auth/login", { email, password });
 
-    setUser(data.user)
-    setIsAuthenticated(true)
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("user", JSON.stringify(data.user));
 
-    API.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
+    setUser(data.user);
+    setIsAuthenticated(true);
 
-    return data
-  }
+    API.defaults.headers.common["Authorization"] = `Bearer ${data.token}`;
 
+    return data;
+  };
+
+  // REGISTER
   const register = async (name, email, password, role) => {
-    const { data } = await API.post('/auth/register', {
+
+    const { data } = await API.post("/auth/register", {
       name,
       email,
       password,
-      role,
-    })
+      role
+    });
 
-    localStorage.setItem('token', data.token)
-    localStorage.setItem('user', JSON.stringify(data.user))
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("user", JSON.stringify(data.user));
 
-    setUser(data.user)
-    setIsAuthenticated(true)
+    setUser(data.user);
+    setIsAuthenticated(true);
 
-    API.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
+    API.defaults.headers.common["Authorization"] = `Bearer ${data.token}`;
 
-    return data
-  }
+    return data;
+  };
 
+  // LOGOUT
   const logout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
 
-    setUser(null)
-    setIsAuthenticated(false)
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
 
-    delete API.defaults.headers.common['Authorization']
-  }
+    setUser(null);
+    setIsAuthenticated(false);
+
+    delete API.defaults.headers.common["Authorization"];
+
+    // redirect to login page
+    window.location.href = "/login";
+  };
 
   const value = {
     user,
@@ -70,12 +83,12 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated,
     login,
     register,
-    logout,
-  }
+    logout
+  };
 
   return (
     <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
-  )
-}
+  );
+};
