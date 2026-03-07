@@ -33,7 +33,6 @@ const InterviewRoom = () => {
 
     if (!roomId || !user) return;
 
-    // No backend validation needed
     setRoomLoading(false);
 
   }, [roomId, user]);
@@ -54,25 +53,37 @@ const InterviewRoom = () => {
       userName: user.name
     });
 
+    // Initial users
     socket.on("room-joined", (data) => {
       setRoomUsers(data.users || []);
     });
 
+    // New user joined
     socket.on("user-joined", (data) => {
-      setRoomUsers(data.users || []);
+      setRoomUsers(prev => [...prev, data]);
     });
 
-    socket.on("user-left", (data) => {
-      setRoomUsers(data.users || []);
+    // User left
+    socket.on("user-left", ({ socketId }) => {
+      setRoomUsers(prev =>
+        prev.filter(user => user.socketId !== socketId)
+      );
     });
 
+    // Chat message
     socket.on("chat-message", (msg) => {
       setMessages(prev => [...prev, msg]);
     });
 
+    // Interview ended
     socket.on("interview-ended", () => {
+
       socket.disconnect();
-      navigate("/dashboard");
+
+      alert("Interview has ended");
+
+      navigate("/");
+
     });
 
     return () => {
@@ -106,7 +117,7 @@ const InterviewRoom = () => {
   };
 
   // ==============================
-  // INVITE LINK
+  // COPY INVITE LINK
   // ==============================
 
   const copyInviteLink = () => {
@@ -138,7 +149,7 @@ const InterviewRoom = () => {
   };
 
   // ==============================
-  // LOADING SCREEN
+  // LOADING
   // ==============================
 
   if (roomLoading) {
@@ -308,6 +319,8 @@ const InterviewRoom = () => {
         </div>
 
       )}
+
+      {/* RATING PANEL */}
 
       {showRating && user?.role === "interviewer" && (
 
