@@ -17,7 +17,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   useEffect(() => {
 
-    const initCall = async () => {
+    const startCall = async () => {
 
       try {
 
@@ -50,26 +50,20 @@ const VideoCallMinimal = ({ roomId }) => {
               urls: "turn:openrelay.metered.ca:443",
               username: "openrelayproject",
               credential: "openrelayproject"
-            },
-            {
-              urls: "turn:openrelay.metered.ca:443?transport=tcp",
-              username: "openrelayproject",
-              credential: "openrelayproject"
             }
           ]
         });
 
         peerConnectionRef.current = pc;
 
-        // Add local tracks
         stream.getTracks().forEach(track => {
           pc.addTrack(track, stream);
         });
 
-        // Remote stream handler
         pc.ontrack = (event) => {
 
           const remote = event.streams[0];
+
           setRemoteStream(remote);
 
           if (remoteVideoRef.current) {
@@ -78,24 +72,25 @@ const VideoCallMinimal = ({ roomId }) => {
 
         };
 
-        // ICE candidates
         pc.onicecandidate = (event) => {
 
           if (event.candidate) {
 
             socket.emit("ice-candidate", {
               roomId,
-              candidate: event.candidate
+              candidate: event.candidate,
+              from: socket.id
             });
 
           }
 
         };
 
+        if (!socket.connected) socket.connect();
+
         socket.emit("join-room", {
           roomId,
-          userId: socket.id,
-          userName: "Guest"
+          socketId: socket.id
         });
 
       } catch (err) {
@@ -106,7 +101,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     };
 
-    initCall();
+    startCall();
 
     const createOffer = async () => {
 
@@ -116,15 +111,21 @@ const VideoCallMinimal = ({ roomId }) => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      socket.emit("offer", { roomId, offer });
+      socket.emit("offer", {
+        roomId,
+        offer,
+        from: socket.id
+      });
 
     };
 
-    socket.on("user-joined", () => {
+    socket.on("user-joined", ({ socketId }) => {
+
+      if (socketId === socket.id) return;
 
       setTimeout(() => {
         createOffer();
-      }, 500);
+      }, 800);
 
     });
 
@@ -139,9 +140,12 @@ const VideoCallMinimal = ({ roomId }) => {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      socket.emit("answer", { roomId, answer });
+      socket.emit("answer", {
+        roomId,
+        answer,
+        from: socket.id
+      });
 
-      // Process queued ICE
       iceQueueRef.current.forEach(candidate => {
         pc.addIceCandidate(candidate);
       });
@@ -179,6 +183,8 @@ const VideoCallMinimal = ({ roomId }) => {
     });
 
     return () => {
+
+      socket.emit("leave-room", roomId);
 
       socket.off("user-joined");
       socket.off("offer");
@@ -282,7 +288,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
         {!remoteStream && (
           <div className="absolute inset-0 flex items-center justify-center text-white">
-            Waiting for candidate...
+            Waiting for participant...
           </div>
         )}
 
