@@ -1,3 +1,4 @@
+import React from "react";
 import { useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
@@ -29,11 +30,11 @@ const CreateRoom = () => {
         throw new Error("Room creation failed");
       }
 
-      // navigate to interview room
       navigate(`/room/${data.roomId}`);
 
     } catch (err) {
       console.error("Create room error:", err);
+
       setError(
         err?.response?.data?.message ||
         err?.message ||
@@ -46,6 +47,7 @@ const CreateRoom = () => {
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+
       <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full">
 
         <h2 className="text-3xl font-bold text-gray-900 mb-4 text-center">
@@ -93,6 +95,7 @@ const CreateRoom = () => {
         </button>
 
       </div>
+
     </div>
   );
 };
