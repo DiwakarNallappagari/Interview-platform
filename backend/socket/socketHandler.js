@@ -16,7 +16,7 @@ export const initializeSocketHandlers = (io) => {
 
         const room = io.sockets.adapter.rooms.get(roomId)
 
-        // Limit room to 5 users
+        // limit room to 5 users
         if (room && room.size >= 5) {
           socket.emit('room-full')
           return
@@ -24,7 +24,11 @@ export const initializeSocketHandlers = (io) => {
 
         socket.join(roomId)
 
-        socket.data = { userId, userName, roomId }
+        socket.data = {
+          userId,
+          userName,
+          roomId
+        }
 
         // Save candidate in DB
         const interview = await Interview.findOne({ roomId })
@@ -38,7 +42,7 @@ export const initializeSocketHandlers = (io) => {
           await interview.save()
         }
 
-        // Get all users currently in room
+        // get users in room
         const clients = await io.in(roomId).fetchSockets()
 
         const users = clients.map(s => ({
@@ -47,10 +51,15 @@ export const initializeSocketHandlers = (io) => {
           userName: s.data?.userName
         }))
 
-        // Send existing users to new user
+        // send existing users to new user
         socket.emit('existing-users', users)
 
-        // Notify others
+        // broadcast participants list
+        io.to(roomId).emit('room-joined', {
+          users
+        })
+
+        // notify others
         socket.to(roomId).emit('user-joined', {
           socketId: socket.id,
           userId,
@@ -58,7 +67,9 @@ export const initializeSocketHandlers = (io) => {
         })
 
       } catch (err) {
+
         console.error('Join room error:', err)
+
       }
 
     })
@@ -129,7 +140,9 @@ export const initializeSocketHandlers = (io) => {
         })
 
       } catch (err) {
+
         console.error('Chat message error:', err)
+
       }
 
     })
@@ -140,7 +153,9 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     socket.on('language-change', ({ roomId, language }) => {
 
-      socket.to(roomId).emit('language-change', { language })
+      socket.to(roomId).emit('language-change', {
+        language
+      })
 
     })
 
@@ -176,6 +191,8 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     socket.on('ice-candidate', ({ roomId, candidate }) => {
 
+      if (!candidate) return
+
       socket.to(roomId).emit('ice-candidate', {
         candidate,
         from: socket.id
@@ -206,7 +223,9 @@ export const initializeSocketHandlers = (io) => {
         socket.leave(roomId)
 
       } catch (err) {
+
         console.error('End interview error:', err)
+
       }
 
     })
@@ -215,7 +234,7 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // DISCONNECT
     // ==============================
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
 
       console.log('User disconnected:', socket.id)
 
@@ -223,9 +242,26 @@ export const initializeSocketHandlers = (io) => {
 
       if (!roomId) return
 
-      socket.to(roomId).emit('user-left', {
-        socketId: socket.id
-      })
+      try {
+
+        const clients = await io.in(roomId).fetchSockets()
+
+        const users = clients.map(s => ({
+          socketId: s.id,
+          userId: s.data?.userId,
+          userName: s.data?.userName
+        }))
+
+        io.to(roomId).emit('user-left', {
+          socketId: socket.id,
+          users
+        })
+
+      } catch (err) {
+
+        console.error('Disconnect error:', err)
+
+      }
 
     })
 
