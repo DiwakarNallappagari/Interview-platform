@@ -1,25 +1,47 @@
-import React, { useContext } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import { AuthContext } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import API from "../utils/api";
 
 const Dashboard = () => {
 
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
 
-  const createInterview = () => {
-    const roomId = Math.random().toString(36).substring(2, 10);
-    navigate(`/room/${roomId}`);
+  const [interviews, setInterviews] = useState([]);
+
+  useEffect(() => {
+    fetchInterviews();
+  }, []);
+
+  const fetchInterviews = async () => {
+    try {
+      const res = await API.get("/interviews");
+      setInterviews(res.data || []);
+    } catch (err) {
+      console.log(err);
+    }
+  };
+
+  const createInterview = async () => {
+    try {
+      const res = await API.post("/interviews/create");
+      const roomId = res.data.roomId;
+      navigate(`/room/${roomId}`);
+    } catch (err) {
+      console.log(err);
+    }
   };
 
   return (
 
     <div className="p-6">
 
-      <div className="flex justify-between items-center">
+      {/* HEADER */}
+      <div className="flex justify-between items-center mb-6">
 
         <h2 className="text-xl font-bold">
-          Welcome {user?.name}
+          Interview Platform
         </h2>
 
         <button
@@ -31,10 +53,20 @@ const Dashboard = () => {
 
       </div>
 
+      {/* INTERVIEW LIST */}
+      {interviews.length === 0 ? (
+        <p>No interviews yet</p>
+      ) : (
+        interviews.map((interview) => (
+          <div key={interview._id}>
+            {interview.roomId}
+          </div>
+        ))
+      )}
+
     </div>
 
   );
-
 };
 
 export default Dashboard;
