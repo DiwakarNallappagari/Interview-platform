@@ -8,7 +8,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
-
   const iceQueueRef = useRef([]);
 
   const [remoteStream, setRemoteStream] = useState(null);
@@ -35,10 +34,25 @@ const VideoCallMinimal = ({ roomId }) => {
 
         const pc = new RTCPeerConnection({
           iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun1.l.google.com:19302" },
+            {
+              urls: [
+                "stun:stun.l.google.com:19302",
+                "stun:stun1.l.google.com:19302",
+                "stun:stun2.l.google.com:19302"
+              ]
+            },
             {
               urls: "turn:openrelay.metered.ca:80",
+              username: "openrelayproject",
+              credential: "openrelayproject"
+            },
+            {
+              urls: "turn:openrelay.metered.ca:443",
+              username: "openrelayproject",
+              credential: "openrelayproject"
+            },
+            {
+              urls: "turn:openrelay.metered.ca:443?transport=tcp",
               username: "openrelayproject",
               credential: "openrelayproject"
             }
@@ -47,12 +61,12 @@ const VideoCallMinimal = ({ roomId }) => {
 
         peerConnectionRef.current = pc;
 
-        // add tracks
+        // Add local tracks
         stream.getTracks().forEach(track => {
           pc.addTrack(track, stream);
         });
 
-        // remote stream
+        // Remote stream handler
         pc.ontrack = (event) => {
 
           const remote = event.streams[0];
@@ -64,7 +78,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
         };
 
-        // ICE candidate
+        // ICE candidates
         pc.onicecandidate = (event) => {
 
           if (event.candidate) {
@@ -106,16 +120,12 @@ const VideoCallMinimal = ({ roomId }) => {
 
     };
 
-    // first user -> do nothing
-    socket.on("existing-users", (users) => {
+    socket.on("user-joined", () => {
 
-      if (users.length === 0) return;
+      setTimeout(() => {
+        createOffer();
+      }, 500);
 
-    });
-
-    // second user joins -> create offer
-    socket.on("user-joined", async () => {
-      createOffer();
     });
 
     socket.on("offer", async ({ offer, from }) => {
@@ -131,7 +141,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
       socket.emit("answer", { roomId, answer });
 
-      // process queued ICE
+      // Process queued ICE
       iceQueueRef.current.forEach(candidate => {
         pc.addIceCandidate(candidate);
       });
@@ -170,7 +180,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
     return () => {
 
-      socket.off("existing-users");
       socket.off("user-joined");
       socket.off("offer");
       socket.off("answer");
