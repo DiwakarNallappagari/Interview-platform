@@ -17,18 +17,27 @@ const Dashboard = () => {
       const res = await API.get("/interviews");
       setInterviews(res.data || []);
     } catch (err) {
-      console.log(err);
+      console.log("Fetch interviews error:", err);
     }
   };
 
   const createInterview = async () => {
     try {
-      const res = await API.post("/interviews/create");
-      const roomId = res.data.roomId;
 
-      navigate(`/room/${roomId}`);
+      const res = await API.post("/interviews/create");
+
+      if (res.data && res.data.roomId) {
+        navigate(`/room/${res.data.roomId}`);
+      }
+
     } catch (err) {
-      console.log(err);
+
+      console.log("Create interview API failed, using fallback");
+
+      // fallback room creation
+      const roomId = Math.random().toString(36).substring(2, 10);
+      navigate(`/room/${roomId}`);
+
     }
   };
 
