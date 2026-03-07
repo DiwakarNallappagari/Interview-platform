@@ -1,5 +1,4 @@
-import React from "react";
-import { useEffect, useRef, useState, useContext } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
 import CodeEditor from "../components/CodeEditor";
@@ -7,7 +6,6 @@ import VideoCall from "../components/VideoCallMinimal";
 import Timer from "../components/Timer";
 import RatingPanel from "../components/RatingPanel";
 import socket from "../utils/socket";
-import API from "../utils/api";
 
 const InterviewRoom = () => {
 
@@ -15,46 +13,28 @@ const InterviewRoom = () => {
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
 
-  const videoCallRef = useRef(null);
-
   const [roomUsers, setRoomUsers] = useState([]);
-  const [showRating, setShowRating] = useState(false);
-
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState("");
 
   const [roomLoading, setRoomLoading] = useState(true);
-  const [roomError, setRoomError] = useState(null);
 
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showRating, setShowRating] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const inviteLink = `${window.location.origin}/room/${roomId}`;
 
   // ==============================
-  // FETCH ROOM
+  // LOAD ROOM
   // ==============================
 
   useEffect(() => {
 
-    const fetchRoom = async () => {
+    if (!roomId || !user) return;
 
-      if (!roomId || !user) return;
-
-      try {
-
-        await API.get(`/interviews/room/${roomId}`);
-
-      } catch (err) {
-
-        setRoomError("Room not found or access denied");
-        setRoomLoading(false);
-
-      }
-
-    };
-
-    fetchRoom();
+    // No backend validation needed
+    setRoomLoading(false);
 
   }, [roomId, user]);
 
@@ -75,47 +55,27 @@ const InterviewRoom = () => {
     });
 
     socket.on("room-joined", (data) => {
-
       setRoomUsers(data.users || []);
-      setRoomLoading(false);
-
     });
 
     socket.on("user-joined", (data) => {
-
       setRoomUsers(data.users || []);
-
     });
 
     socket.on("user-left", (data) => {
-
       setRoomUsers(data.users || []);
-
     });
 
     socket.on("chat-message", (msg) => {
-
       setMessages(prev => [...prev, msg]);
-
     });
 
     socket.on("interview-ended", () => {
-
-      stopEverything();
+      socket.disconnect();
       navigate("/dashboard");
-
     });
 
-    // fallback if socket event doesn't fire
-    const fallback = setTimeout(() => {
-
-      setRoomLoading(false);
-
-    }, 2000);
-
     return () => {
-
-      clearTimeout(fallback);
 
       socket.off("room-joined");
       socket.off("user-joined");
@@ -128,21 +88,7 @@ const InterviewRoom = () => {
   }, [roomId, user, navigate]);
 
   // ==============================
-  // STOP VIDEO
-  // ==============================
-
-  const stopEverything = () => {
-
-    if (videoCallRef.current) {
-      videoCallRef.current.stopConnection();
-    }
-
-    socket.disconnect();
-
-  };
-
-  // ==============================
-  // CHAT MESSAGE
+  // CHAT
   // ==============================
 
   const sendMessage = () => {
@@ -151,7 +97,8 @@ const InterviewRoom = () => {
 
     socket.emit("chat-message", {
       roomId,
-      message: messageInput
+      message: messageInput,
+      senderName: user?.name
     });
 
     setMessageInput("");
@@ -159,7 +106,7 @@ const InterviewRoom = () => {
   };
 
   // ==============================
-  // COPY INVITE LINK
+  // INVITE LINK
   // ==============================
 
   const copyInviteLink = () => {
@@ -204,16 +151,6 @@ const InterviewRoom = () => {
 
   }
 
-  if (roomError) {
-
-    return (
-      <div className="h-screen bg-gray-900 flex items-center justify-center">
-        <p className="text-red-400">{roomError}</p>
-      </div>
-    );
-
-  }
-
   return (
 
     <div className="h-screen bg-gray-900 flex flex-col">
@@ -231,8 +168,6 @@ const InterviewRoom = () => {
 
           <Timer />
 
-          {/* PARTICIPANTS */}
-
           <div className="text-sm">
 
             <p className="font-semibold">
@@ -247,8 +182,6 @@ const InterviewRoom = () => {
 
           </div>
 
-          {/* INVITE BUTTON */}
-
           {roomUsers.length < 2 && (
 
             <button
@@ -259,8 +192,6 @@ const InterviewRoom = () => {
             </button>
 
           )}
-
-          {/* END INTERVIEW */}
 
           {user?.role === "interviewer" && (
 
@@ -282,7 +213,7 @@ const InterviewRoom = () => {
       <div className="flex-1 flex gap-4 p-4 overflow-hidden">
 
         <div className="flex-1 flex flex-col">
-          <VideoCall roomId={roomId} ref={videoCallRef} />
+          <VideoCall roomId={roomId} />
         </div>
 
         <div className="flex-1 flex flex-col">
@@ -377,8 +308,6 @@ const InterviewRoom = () => {
         </div>
 
       )}
-
-      {/* RATING PANEL */}
 
       {showRating && user?.role === "interviewer" && (
 

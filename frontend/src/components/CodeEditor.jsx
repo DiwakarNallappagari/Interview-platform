@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Editor from "@monaco-editor/react";
-import socket from "../utils/socket";   // ✅ FIXED (default import)
+import socket from "../utils/socket";
 import API from "../utils/api";
 
 const LANGUAGES = [
@@ -12,6 +12,7 @@ const LANGUAGES = [
 ];
 
 const CodeEditor = ({ roomId }) => {
+
   const [code, setCode] = useState("// Start coding here...\n");
   const [language, setLanguage] = useState("javascript");
   const [output, setOutput] = useState(null);
@@ -19,12 +20,11 @@ const CodeEditor = ({ roomId }) => {
   const [stdin, setStdin] = useState("");
 
   useEffect(() => {
-    // Receive code updates
+
     socket.on("receive-code", (data) => {
       setCode(data.code);
     });
 
-    // Receive language change
     socket.on("language-change", (data) => {
       setLanguage(data.language);
     });
@@ -33,31 +33,40 @@ const CodeEditor = ({ roomId }) => {
       socket.off("receive-code");
       socket.off("language-change");
     };
+
   }, []);
 
   const handleCodeChange = (value) => {
+
     setCode(value || "");
+
     socket.emit("code-change", {
       roomId,
       code: value,
     });
+
   };
 
   const handleLanguageChange = (e) => {
+
     const newLanguage = e.target.value;
+
     setLanguage(newLanguage);
 
     socket.emit("language-change", {
       roomId,
       language: newLanguage,
     });
+
   };
 
   const handleRunCode = async () => {
+
     setRunning(true);
     setOutput(null);
 
     try {
+
       const resp = await API.post(`/interviews/${roomId}/run`, {
         code,
         language,
@@ -65,23 +74,32 @@ const CodeEditor = ({ roomId }) => {
       });
 
       setOutput(resp.data);
+
     } catch (err) {
+
       setOutput({
         error: err.response?.data?.message || err.message,
       });
+
     } finally {
+
       setRunning(false);
+
     }
+
   };
 
   return (
+
     <div className="bg-gray-800 rounded-lg overflow-hidden flex flex-col h-full">
-      
+
       {/* Header */}
       <div className="bg-gray-700 p-4 flex justify-between items-center border-b border-gray-600">
+
         <h2 className="text-white font-semibold">Code Editor</h2>
 
         <div className="flex items-center gap-3">
+
           <select
             value={language}
             onChange={handleLanguageChange}
@@ -101,11 +119,14 @@ const CodeEditor = ({ roomId }) => {
           >
             {running ? "Running..." : "Run"}
           </button>
+
         </div>
+
       </div>
 
       {/* Monaco Editor */}
       <div className="flex-1 overflow-hidden">
+
         <Editor
           height="100%"
           language={language}
@@ -118,12 +139,14 @@ const CodeEditor = ({ roomId }) => {
             scrollBeyondLastLine: false,
           }}
         />
+
       </div>
 
-      {/* Output + stdin */}
+      {/* Output */}
       <div className="bg-gray-900 px-4 py-3 border-t border-gray-600">
+
         <div className="flex gap-2 items-start">
-          
+
           <textarea
             value={stdin}
             onChange={(e) => setStdin(e.target.value)}
@@ -132,30 +155,43 @@ const CodeEditor = ({ roomId }) => {
           />
 
           <div className="flex-1 bg-gray-800 p-3 rounded border border-gray-700 text-sm text-white">
+
             <div className="font-semibold mb-1">Output</div>
 
             {output ? (
+
               <pre className="whitespace-pre-wrap text-xs">
+
                 {output.stdout ||
                  output.stderr ||
                  output.compile_output ||
                  output.error ||
                  JSON.stringify(output, null, 2)}
+
               </pre>
+
             ) : (
+
               <p className="text-gray-400">
                 No output yet. Click Run to execute.
               </p>
+
             )}
+
           </div>
+
         </div>
 
         <div className="mt-2 text-xs text-gray-400">
           Auto-saving every 5 seconds...
         </div>
+
       </div>
+
     </div>
+
   );
+
 };
 
 export default CodeEditor;
