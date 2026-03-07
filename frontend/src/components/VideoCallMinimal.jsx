@@ -35,24 +35,21 @@ const VideoCallMinimal = ({ roomId }) => {
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
-            {
-              urls: "turn:openrelay.metered.ca:80",
-              username: "openrelayproject",
-              credential: "openrelayproject"
-            }
+            { urls: "stun:stun2.l.google.com:19302" }
           ]
         });
 
         peerConnectionRef.current = pc;
 
+        // Add local tracks
         stream.getTracks().forEach(track => {
           pc.addTrack(track, stream);
         });
 
+        // Receive remote tracks
         pc.ontrack = (event) => {
 
           const remote = event.streams[0];
-
           setRemoteStream(remote);
 
           if (remoteVideoRef.current) {
@@ -61,6 +58,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
         };
 
+        // Send ICE candidates
         pc.onicecandidate = (event) => {
 
           if (event.candidate) {
@@ -74,6 +72,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
         };
 
+        // Join room
         socket.emit("join-room", {
           roomId,
           userId: socket.id,
@@ -90,6 +89,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     startCall();
 
+    // Create WebRTC offer
     const createOffer = async () => {
 
       const pc = peerConnectionRef.current;
@@ -98,22 +98,28 @@ const VideoCallMinimal = ({ roomId }) => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      socket.emit("offer", { roomId, offer });
+      socket.emit("offer", {
+        roomId,
+        offer
+      });
 
     };
 
-    socket.on("existing-users", (users) => {
+    // Existing users in room
+    socket.on("existing-users", async (users) => {
 
-      if (users.length > 1) {
+      if (users.length > 0) {
         createOffer();
       }
 
     });
 
-    socket.on("user-joined", () => {
+    // When new user joins
+    socket.on("user-joined", async () => {
       createOffer();
     });
 
+    // Receive offer
     socket.on("offer", async ({ offer, from }) => {
 
       if (from === socket.id) return;
@@ -126,10 +132,14 @@ const VideoCallMinimal = ({ roomId }) => {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      socket.emit("answer", { roomId, answer });
+      socket.emit("answer", {
+        roomId,
+        answer
+      });
 
     });
 
+    // Receive answer
     socket.on("answer", async ({ answer, from }) => {
 
       if (from === socket.id) return;
@@ -141,6 +151,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
+    // Receive ICE candidate
     socket.on("ice-candidate", async ({ candidate, from }) => {
 
       if (from === socket.id) return;
@@ -176,6 +187,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   }, [roomId]);
 
+  // Toggle camera
   const toggleCamera = () => {
 
     const track = localStreamRef.current?.getVideoTracks()[0];
@@ -186,6 +198,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
+  // Toggle mic
   const toggleMic = () => {
 
     const track = localStreamRef.current?.getAudioTracks()[0];
@@ -196,6 +209,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
+  // Screen sharing
   const toggleScreenShare = async () => {
 
     if (!screenSharing) {
