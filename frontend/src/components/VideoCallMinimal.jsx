@@ -9,6 +9,8 @@ const VideoCallMinimal = ({ roomId }) => {
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
 
+  const iceQueueRef = useRef([]);
+
   const [remoteStream, setRemoteStream] = useState(null);
   const [cameraOn, setCameraOn] = useState(true);
   const [micOn, setMicOn] = useState(true);
@@ -16,7 +18,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   useEffect(() => {
 
-    const startCall = async () => {
+    const initCall = async () => {
 
       try {
 
@@ -35,18 +37,22 @@ const VideoCallMinimal = ({ roomId }) => {
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
-            { urls: "stun:stun2.l.google.com:19302" }
+            {
+              urls: "turn:openrelay.metered.ca:80",
+              username: "openrelayproject",
+              credential: "openrelayproject"
+            }
           ]
         });
 
         peerConnectionRef.current = pc;
 
-        // Add local tracks
+        // add tracks
         stream.getTracks().forEach(track => {
           pc.addTrack(track, stream);
         });
 
-        // Receive remote tracks
+        // remote stream
         pc.ontrack = (event) => {
 
           const remote = event.streams[0];
@@ -58,7 +64,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
         };
 
-        // Send ICE candidates
+        // ICE candidate
         pc.onicecandidate = (event) => {
 
           if (event.candidate) {
@@ -72,7 +78,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
         };
 
-        // Join room
         socket.emit("join-room", {
           roomId,
           userId: socket.id,
@@ -87,9 +92,8 @@ const VideoCallMinimal = ({ roomId }) => {
 
     };
 
-    startCall();
+    initCall();
 
-    // Create WebRTC offer
     const createOffer = async () => {
 
       const pc = peerConnectionRef.current;
@@ -98,71 +102,68 @@ const VideoCallMinimal = ({ roomId }) => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      socket.emit("offer", {
-        roomId,
-        offer
-      });
+      socket.emit("offer", { roomId, offer });
 
     };
 
-    // Existing users in room
-    socket.on("existing-users", async (users) => {
+    // first user -> do nothing
+    socket.on("existing-users", (users) => {
 
-      if (users.length > 0) {
-        createOffer();
-      }
+      if (users.length === 0) return;
 
     });
 
-    // When new user joins
+    // second user joins -> create offer
     socket.on("user-joined", async () => {
       createOffer();
     });
 
-    // Receive offer
     socket.on("offer", async ({ offer, from }) => {
 
       if (from === socket.id) return;
 
       const pc = peerConnectionRef.current;
-      if (!pc) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      socket.emit("answer", {
-        roomId,
-        answer
+      socket.emit("answer", { roomId, answer });
+
+      // process queued ICE
+      iceQueueRef.current.forEach(candidate => {
+        pc.addIceCandidate(candidate);
       });
+
+      iceQueueRef.current = [];
 
     });
 
-    // Receive answer
     socket.on("answer", async ({ answer, from }) => {
 
       if (from === socket.id) return;
 
       const pc = peerConnectionRef.current;
-      if (!pc) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
     });
 
-    // Receive ICE candidate
     socket.on("ice-candidate", async ({ candidate, from }) => {
 
       if (from === socket.id) return;
 
       const pc = peerConnectionRef.current;
-      if (!pc) return;
 
-      try {
+      if (pc.remoteDescription) {
+
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.error("ICE error:", err);
+
+      } else {
+
+        iceQueueRef.current.push(new RTCIceCandidate(candidate));
+
       }
 
     });
@@ -187,7 +188,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   }, [roomId]);
 
-  // Toggle camera
   const toggleCamera = () => {
 
     const track = localStreamRef.current?.getVideoTracks()[0];
@@ -198,7 +198,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
-  // Toggle mic
   const toggleMic = () => {
 
     const track = localStreamRef.current?.getAudioTracks()[0];
@@ -209,7 +208,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
-  // Screen sharing
   const toggleScreenShare = async () => {
 
     if (!screenSharing) {
