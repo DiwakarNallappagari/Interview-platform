@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import socket from "../utils/socket";
 
 const VideoCallMinimal = ({ roomId }) => {
@@ -45,25 +45,22 @@ const VideoCallMinimal = ({ roomId }) => {
 
         peerConnectionRef.current = pc;
 
-        // add tracks
         stream.getTracks().forEach(track => {
           pc.addTrack(track, stream);
         });
 
-        // remote stream
         pc.ontrack = (event) => {
 
           const remote = event.streams[0];
+
+          setRemoteStream(remote);
 
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = remote;
           }
 
-          setRemoteStream(remote);
-
         };
 
-        // ICE candidate
         pc.onicecandidate = (event) => {
 
           if (event.candidate) {
@@ -77,7 +74,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
         };
 
-        // join room
         socket.emit("join-room", {
           roomId,
           userId: socket.id,
@@ -94,108 +90,71 @@ const VideoCallMinimal = ({ roomId }) => {
 
     startCall();
 
+    const createOffer = async () => {
 
-    // EXISTING USERS
+      const pc = peerConnectionRef.current;
+      if (!pc) return;
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      socket.emit("offer", { roomId, offer });
+
+    };
+
     socket.on("existing-users", (users) => {
 
-      console.log("Users already in room:", users);
-
-      // if someone already exists, create offer
       if (users.length > 1) {
-
         createOffer();
-
       }
 
     });
 
-
-    // USER JOINED
     socket.on("user-joined", () => {
-
-      console.log("User joined");
-
       createOffer();
-
     });
 
-
-    const createOffer = async () => {
-
-      const pc = peerConnectionRef.current;
-
-      if (!pc) return;
-
-      const offer = await pc.createOffer();
-
-      await pc.setLocalDescription(offer);
-
-      socket.emit("offer", {
-        roomId,
-        offer
-      });
-
-    };
-
-
-    // RECEIVE OFFER
     socket.on("offer", async ({ offer, from }) => {
 
       if (from === socket.id) return;
 
       const pc = peerConnectionRef.current;
-
       if (!pc) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
       const answer = await pc.createAnswer();
-
       await pc.setLocalDescription(answer);
 
-      socket.emit("answer", {
-        roomId,
-        answer
-      });
+      socket.emit("answer", { roomId, answer });
 
     });
 
-
-    // RECEIVE ANSWER
     socket.on("answer", async ({ answer, from }) => {
 
       if (from === socket.id) return;
 
       const pc = peerConnectionRef.current;
-
       if (!pc) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
     });
 
-
-    // RECEIVE ICE
     socket.on("ice-candidate", async ({ candidate, from }) => {
 
       if (from === socket.id) return;
 
       const pc = peerConnectionRef.current;
-
       if (!pc) return;
 
       try {
-
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
-
       } catch (err) {
-
         console.error("ICE error:", err);
-
       }
 
     });
-
 
     return () => {
 
@@ -217,32 +176,25 @@ const VideoCallMinimal = ({ roomId }) => {
 
   }, [roomId]);
 
-
   const toggleCamera = () => {
 
     const track = localStreamRef.current?.getVideoTracks()[0];
-
     if (!track) return;
 
     track.enabled = !track.enabled;
-
     setCameraOn(track.enabled);
 
   };
 
-
   const toggleMic = () => {
 
     const track = localStreamRef.current?.getAudioTracks()[0];
-
     if (!track) return;
 
     track.enabled = !track.enabled;
-
     setMicOn(track.enabled);
 
   };
-
 
   const toggleScreenShare = async () => {
 
@@ -260,7 +212,9 @@ const VideoCallMinimal = ({ roomId }) => {
 
       if (sender) sender.replaceTrack(screenTrack);
 
-      localVideoRef.current.srcObject = screenStream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = screenStream;
+      }
 
       screenTrack.onended = stopScreenShare;
 
@@ -274,7 +228,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
-
   const stopScreenShare = () => {
 
     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
@@ -285,12 +238,13 @@ const VideoCallMinimal = ({ roomId }) => {
 
     if (sender && videoTrack) sender.replaceTrack(videoTrack);
 
-    localVideoRef.current.srcObject = localStreamRef.current;
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
 
     setScreenSharing(false);
 
   };
-
 
   return (
 
