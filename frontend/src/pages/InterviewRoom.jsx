@@ -16,11 +16,9 @@ const InterviewRoom = () => {
   const [roomUsers, setRoomUsers] = useState([]);
   const [messages, setMessages] = useState([]);
   const [messageInput, setMessageInput] = useState("");
-
   const [roomLoading, setRoomLoading] = useState(true);
 
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [showRating, setShowRating] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const inviteLink = `${window.location.origin}/room/${roomId}`;
@@ -47,39 +45,25 @@ const InterviewRoom = () => {
 
     if (!socket.connected) socket.connect();
 
-    // Prevent duplicate join
-    if (!socket.hasJoinedRoom) {
+    socket.emit("join-room", {
+      roomId,
+      userId: user._id,
+      userName: user.name
+    });
 
-      socket.emit("join-room", {
-        roomId,
-        userId: user._id,
-        userName: user.name
-      });
-
-      socket.hasJoinedRoom = true;
-    }
-
-    // Initial users
+    // Room users
     const handleRoomJoined = (data) => {
-
       setRoomUsers(data.users || []);
-
     };
 
-    // New user joined
     const handleUserJoined = (data) => {
-
       setRoomUsers(prev => {
-
         const exists = prev.find(u => u.socketId === data.socketId);
         if (exists) return prev;
-
         return [...prev, data];
       });
-
     };
 
-    // User left
     const handleUserLeft = ({ socketId, users }) => {
 
       if (users) {
@@ -92,22 +76,18 @@ const InterviewRoom = () => {
 
     };
 
-    // Chat message
     const handleChat = (msg) => {
-
       setMessages(prev => [...prev, msg]);
-
     };
 
-    // Interview ended
     const handleInterviewEnded = () => {
 
-      alert("Interview has ended");
+      alert("Interview finished");
 
       socket.disconnect();
-      socket.hasJoinedRoom = false;
 
-      navigate("/");
+      // redirect to interviews page
+      window.location.href = "/interviews";
 
     };
 
@@ -127,7 +107,7 @@ const InterviewRoom = () => {
 
     };
 
-  }, [roomId, user, navigate]);
+  }, [roomId, user]);
 
   // ==============================
   // SEND CHAT
@@ -170,12 +150,10 @@ const InterviewRoom = () => {
 
     socket.emit("end-interview", { roomId });
 
-    setShowRating(true);
-
   };
 
   // ==============================
-  // LOADING SCREEN
+  // LOADING
   // ==============================
 
   if (roomLoading) {
@@ -245,7 +223,7 @@ const InterviewRoom = () => {
 
       </div>
 
-      {/* MAIN CONTENT */}
+      {/* MAIN */}
 
       <div className="flex-1 flex gap-4 p-4 overflow-hidden">
 
@@ -343,17 +321,6 @@ const InterviewRoom = () => {
           </div>
 
         </div>
-
-      )}
-
-      {/* RATING PANEL */}
-
-      {showRating && user?.role === "interviewer" && (
-
-        <RatingPanel
-          roomId={roomId}
-          onClose={() => setShowRating(false)}
-        />
 
       )}
 
