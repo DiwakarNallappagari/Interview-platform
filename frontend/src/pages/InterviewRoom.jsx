@@ -4,7 +4,6 @@ import { AuthContext } from "../context/AuthContext";
 import CodeEditor from "../components/CodeEditor";
 import VideoCall from "../components/VideoCallMinimal";
 import Timer from "../components/Timer";
-import RatingPanel from "../components/RatingPanel";
 import socket from "../utils/socket";
 
 const InterviewRoom = () => {
@@ -51,17 +50,21 @@ const InterviewRoom = () => {
       userName: user.name
     });
 
-    // Room users
     const handleRoomJoined = (data) => {
       setRoomUsers(data.users || []);
     };
 
     const handleUserJoined = (data) => {
+
       setRoomUsers(prev => {
+
         const exists = prev.find(u => u.socketId === data.socketId);
         if (exists) return prev;
+
         return [...prev, data];
+
       });
+
     };
 
     const handleUserLeft = ({ socketId, users }) => {
@@ -86,8 +89,7 @@ const InterviewRoom = () => {
 
       socket.disconnect();
 
-      // redirect to interviews page
-      window.location.href = "/interviews";
+      navigate("/dashboard");
 
     };
 
@@ -107,7 +109,7 @@ const InterviewRoom = () => {
 
     };
 
-  }, [roomId, user]);
+  }, [roomId, user, navigate]);
 
   // ==============================
   // SEND CHAT
@@ -153,7 +155,7 @@ const InterviewRoom = () => {
   };
 
   // ==============================
-  // LOADING
+  // LOADING SCREEN
   // ==============================
 
   if (roomLoading) {
