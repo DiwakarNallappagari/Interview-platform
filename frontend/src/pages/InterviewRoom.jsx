@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext } from "react";
+import React, { useEffect, useState, useContext, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { AuthContext } from "../context/AuthContext";
 import CodeEditor from "../components/CodeEditor";
@@ -11,6 +11,8 @@ const InterviewRoom = () => {
   const { roomId } = useParams();
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
+
+  const hasJoinedRef = useRef(false);
 
   const [roomUsers, setRoomUsers] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -44,11 +46,18 @@ const InterviewRoom = () => {
 
     if (!socket.connected) socket.connect();
 
-    socket.emit("join-room", {
-      roomId,
-      userId: user._id,
-      userName: user.name
-    });
+    // Prevent duplicate joins
+    if (!hasJoinedRef.current) {
+
+      socket.emit("join-room", {
+        roomId,
+        userId: user._id,
+        userName: user.name
+      });
+
+      hasJoinedRef.current = true;
+
+    }
 
     const handleRoomJoined = (data) => {
       setRoomUsers(data.users || []);
