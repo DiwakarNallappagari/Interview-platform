@@ -16,8 +16,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   useEffect(() => {
 
-    let pc;
-
     const init = async () => {
 
       try {
@@ -33,10 +31,15 @@ const VideoCallMinimal = ({ roomId }) => {
           localVideoRef.current.srcObject = stream;
         }
 
-        pc = new RTCPeerConnection({
+        const pc = new RTCPeerConnection({
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun1.l.google.com:19302" }
+            { urls: "stun:stun1.l.google.com:19302" },
+            {
+              urls: "turn:openrelay.metered.ca:80",
+              username: "openrelayproject",
+              credential: "openrelayproject"
+            }
           ]
         });
 
@@ -73,7 +76,11 @@ const VideoCallMinimal = ({ roomId }) => {
 
         if (!socket.connected) socket.connect();
 
-        socket.emit("join-room", roomId);
+        socket.emit("join-room", {
+          roomId,
+          userId: socket.id,
+          userName: "User"
+        });
 
       } catch (err) {
 
@@ -87,15 +94,34 @@ const VideoCallMinimal = ({ roomId }) => {
 
     const createOffer = async () => {
 
+      const pc = peerConnectionRef.current;
+
       const offer = await pc.createOffer();
 
       await pc.setLocalDescription(offer);
 
-      socket.emit("offer", { roomId, offer });
+      socket.emit("offer", {
+        roomId,
+        offer
+      });
 
     };
 
-    socket.on("user-joined", async () => {
+    socket.on("existing-users", (users) => {
+
+      if (users.length > 1) {
+
+        setTimeout(() => {
+          createOffer();
+        }, 500);
+
+      }
+
+    });
+
+    socket.on("user-joined", ({ socketId }) => {
+
+      if (socketId === socket.id) return;
 
       setTimeout(() => {
         createOffer();
@@ -103,7 +129,11 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    socket.on("offer", async ({ offer }) => {
+    socket.on("offer", async ({ offer, from }) => {
+
+      if (from === socket.id) return;
+
+      const pc = peerConnectionRef.current;
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
@@ -111,11 +141,18 @@ const VideoCallMinimal = ({ roomId }) => {
 
       await pc.setLocalDescription(answer);
 
-      socket.emit("answer", { roomId, answer });
+      socket.emit("answer", {
+        roomId,
+        answer
+      });
 
     });
 
-    socket.on("answer", async ({ answer }) => {
+    socket.on("answer", async ({ answer, from }) => {
+
+      if (from === socket.id) return;
+
+      const pc = peerConnectionRef.current;
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
@@ -123,9 +160,13 @@ const VideoCallMinimal = ({ roomId }) => {
 
     socket.on("ice-candidate", async ({ candidate }) => {
 
+      const pc = peerConnectionRef.current;
+
       try {
 
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        if (candidate) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        }
 
       } catch (err) {
 
@@ -137,8 +178,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     return () => {
 
-      socket.emit("leave-room", roomId);
-
+      socket.off("existing-users");
       socket.off("user-joined");
       socket.off("offer");
       socket.off("answer");

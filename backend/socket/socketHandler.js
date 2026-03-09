@@ -14,10 +14,13 @@ export const initializeSocketHandlers = (io) => {
 
       try {
 
+        // Prevent duplicate join
+        if (socket.data?.roomId === roomId) return
+
         const room = io.sockets.adapter.rooms.get(roomId)
 
-        // limit room to 5 users
-        if (room && room.size >= 5) {
+        // Limit to 2 participants (interviewer + candidate)
+        if (room && room.size >= 2) {
           socket.emit('room-full')
           return
         }
@@ -42,7 +45,7 @@ export const initializeSocketHandlers = (io) => {
           await interview.save()
         }
 
-        // get users in room
+        // Get users currently in room
         const clients = await io.in(roomId).fetchSockets()
 
         const users = clients.map(s => ({
@@ -51,20 +54,22 @@ export const initializeSocketHandlers = (io) => {
           userName: s.data?.userName
         }))
 
-        // send existing users to new user
+        // Send existing users to newly joined user
         socket.emit('existing-users', users)
 
-        // broadcast participants list
-        io.to(roomId).emit('room-joined', {
-          users
-        })
+        // Broadcast participants list
+        io.to(roomId).emit('room-joined', { users })
 
-        // notify others
-        socket.to(roomId).emit('user-joined', {
-          socketId: socket.id,
-          userId,
-          userName
-        })
+        // Notify others (small delay for WebRTC stability)
+        setTimeout(() => {
+
+          socket.to(roomId).emit('user-joined', {
+            socketId: socket.id,
+            userId,
+            userName
+          })
+
+        }, 200)
 
       } catch (err) {
 
@@ -153,9 +158,7 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     socket.on('language-change', ({ roomId, language }) => {
 
-      socket.to(roomId).emit('language-change', {
-        language
-      })
+      socket.to(roomId).emit('language-change', { language })
 
     })
 
@@ -164,6 +167,8 @@ export const initializeSocketHandlers = (io) => {
     // WEBRTC OFFER
     // ==============================
     socket.on('offer', ({ roomId, offer }) => {
+
+      if (!roomId || !offer) return
 
       socket.to(roomId).emit('offer', {
         offer,
@@ -178,6 +183,8 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     socket.on('answer', ({ roomId, answer }) => {
 
+      if (!roomId || !answer) return
+
       socket.to(roomId).emit('answer', {
         answer,
         from: socket.id
@@ -191,7 +198,7 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     socket.on('ice-candidate', ({ roomId, candidate }) => {
 
-      if (!candidate) return
+      if (!candidate || !roomId) return
 
       socket.to(roomId).emit('ice-candidate', {
         candidate,
@@ -243,6 +250,8 @@ export const initializeSocketHandlers = (io) => {
       if (!roomId) return
 
       try {
+
+        socket.leave(roomId)
 
         const clients = await io.in(roomId).fetchSockets()
 

@@ -43,36 +43,60 @@ const InterviewRoom = () => {
 
   useEffect(() => {
 
-    if (!user) return;
+    if (!user || !roomId) return;
 
     if (!socket.connected) socket.connect();
 
-    socket.emit("join-room", {
-      roomId,
-      userId: user._id,
-      userName: user.name
-    });
+    // Prevent duplicate join
+    if (!socket.hasJoinedRoom) {
+
+      socket.emit("join-room", {
+        roomId,
+        userId: user._id,
+        userName: user.name
+      });
+
+      socket.hasJoinedRoom = true;
+    }
 
     // Initial users
     const handleRoomJoined = (data) => {
+
       setRoomUsers(data.users || []);
+
     };
 
-    // New user
+    // New user joined
     const handleUserJoined = (data) => {
-      setRoomUsers(prev => [...prev, data]);
+
+      setRoomUsers(prev => {
+
+        const exists = prev.find(u => u.socketId === data.socketId);
+        if (exists) return prev;
+
+        return [...prev, data];
+      });
+
     };
 
     // User left
-    const handleUserLeft = ({ socketId }) => {
-      setRoomUsers(prev =>
-        prev.filter(u => u.socketId !== socketId)
-      );
+    const handleUserLeft = ({ socketId, users }) => {
+
+      if (users) {
+        setRoomUsers(users);
+      } else {
+        setRoomUsers(prev =>
+          prev.filter(u => u.socketId !== socketId)
+        );
+      }
+
     };
 
-    // Chat
+    // Chat message
     const handleChat = (msg) => {
+
       setMessages(prev => [...prev, msg]);
+
     };
 
     // Interview ended
@@ -80,13 +104,10 @@ const InterviewRoom = () => {
 
       alert("Interview has ended");
 
-      setTimeout(() => {
+      socket.disconnect();
+      socket.hasJoinedRoom = false;
 
-        socket.disconnect();
-
-        navigate("/");
-
-      }, 500);
+      navigate("/");
 
     };
 
@@ -118,8 +139,7 @@ const InterviewRoom = () => {
 
     socket.emit("chat-message", {
       roomId,
-      message: messageInput,
-      senderName: user?.name
+      message: messageInput
     });
 
     setMessageInput("");
