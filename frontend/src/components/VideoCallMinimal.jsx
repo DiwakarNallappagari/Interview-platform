@@ -17,7 +17,66 @@ const VideoCallMinimal = ({ roomId }) => {
 
   useEffect(() => {
 
-    let pc;
+    const createPeerConnection = () => {
+
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+
+          {
+            urls: "turn:global.relay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          },
+          {
+            urls: "turn:global.relay.metered.ca:80?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          },
+          {
+            urls: "turn:global.relay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          },
+          {
+            urls: "turns:global.relay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          }
+        ]
+      });
+
+      pc.ontrack = (event) => {
+
+        const remote = event.streams[0];
+        setRemoteStream(remote);
+
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remote;
+        }
+
+      };
+
+      pc.onicecandidate = (event) => {
+
+        if (event.candidate) {
+
+          socket.emit("ice-candidate", {
+            roomId,
+            candidate: event.candidate,
+            from: socket.id
+          });
+
+        }
+
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log("WebRTC state:", pc.connectionState);
+      };
+
+      return pc;
+    };
 
     const init = async () => {
 
@@ -34,52 +93,12 @@ const VideoCallMinimal = ({ roomId }) => {
           localVideoRef.current.srcObject = stream;
         }
 
-        pc = new RTCPeerConnection({
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            {
-              urls: "turn:openrelay.metered.ca:80",
-              username: "openrelayproject",
-              credential: "openrelayproject"
-            }
-          ]
-        });
-
+        const pc = createPeerConnection();
         peerConnectionRef.current = pc;
 
         stream.getTracks().forEach(track => {
           pc.addTrack(track, stream);
         });
-
-        pc.ontrack = (event) => {
-
-          const remote = event.streams[0];
-
-          setRemoteStream(remote);
-
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remote;
-          }
-
-        };
-
-        pc.onicecandidate = (event) => {
-
-          if (event.candidate) {
-
-            socket.emit("ice-candidate", {
-              roomId,
-              candidate: event.candidate,
-              from: socket.id
-            });
-
-          }
-
-        };
-
-        pc.onconnectionstatechange = () => {
-          console.log("WebRTC state:", pc.connectionState);
-        };
 
         if (!socket.connected) socket.connect();
 
@@ -90,7 +109,9 @@ const VideoCallMinimal = ({ roomId }) => {
         });
 
       } catch (err) {
+
         console.log("Media error:", err);
+
       }
 
     };
@@ -119,8 +140,8 @@ const VideoCallMinimal = ({ roomId }) => {
 
         const other = users.find(u => u.socketId !== socket.id);
 
-        if (socket.id < other.socketId) {
-          setTimeout(createOffer, 500);
+        if (other && socket.id < other.socketId) {
+          setTimeout(createOffer, 400);
         }
 
       }
@@ -132,7 +153,7 @@ const VideoCallMinimal = ({ roomId }) => {
       if (socketId === socket.id) return;
 
       if (socket.id < socketId) {
-        setTimeout(createOffer, 500);
+        setTimeout(createOffer, 400);
       }
 
     });
@@ -164,9 +185,8 @@ const VideoCallMinimal = ({ roomId }) => {
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
-      // Add queued ICE candidates
-      pendingCandidatesRef.current.forEach(candidate =>
-        pc.addIceCandidate(candidate)
+      pendingCandidatesRef.current.forEach(c =>
+        pc.addIceCandidate(c)
       );
 
       pendingCandidatesRef.current = [];
@@ -178,7 +198,6 @@ const VideoCallMinimal = ({ roomId }) => {
       if (from === socket.id) return;
 
       const pc = peerConnectionRef.current;
-
       const ice = new RTCIceCandidate(candidate);
 
       try {
@@ -190,7 +209,9 @@ const VideoCallMinimal = ({ roomId }) => {
         }
 
       } catch (err) {
+
         console.log("ICE error:", err);
+
       }
 
     });
@@ -256,7 +277,6 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
       screenTrack.onended = stopScreenShare;
-
       setScreenSharing(true);
 
     } else {
