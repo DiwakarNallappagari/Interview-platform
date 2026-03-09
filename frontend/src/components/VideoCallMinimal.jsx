@@ -16,6 +16,8 @@ const VideoCallMinimal = ({ roomId }) => {
 
   useEffect(() => {
 
+    let pc;
+
     const init = async () => {
 
       try {
@@ -31,7 +33,7 @@ const VideoCallMinimal = ({ roomId }) => {
           localVideoRef.current.srcObject = stream;
         }
 
-        const pc = new RTCPeerConnection({
+        pc = new RTCPeerConnection({
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
@@ -67,10 +69,17 @@ const VideoCallMinimal = ({ roomId }) => {
 
             socket.emit("ice-candidate", {
               roomId,
-              candidate: event.candidate
+              candidate: event.candidate,
+              from: socket.id
             });
 
           }
+
+        };
+
+        pc.onconnectionstatechange = () => {
+
+          console.log("WebRTC state:", pc.connectionState);
 
         };
 
@@ -96,13 +105,16 @@ const VideoCallMinimal = ({ roomId }) => {
 
       const pc = peerConnectionRef.current;
 
+      if (!pc) return;
+
       const offer = await pc.createOffer();
 
       await pc.setLocalDescription(offer);
 
       socket.emit("offer", {
         roomId,
-        offer
+        offer,
+        from: socket.id
       });
 
     };
@@ -111,9 +123,15 @@ const VideoCallMinimal = ({ roomId }) => {
 
       if (users.length > 1) {
 
-        setTimeout(() => {
-          createOffer();
-        }, 500);
+        const other = users.find(u => u.socketId !== socket.id);
+
+        if (socket.id < other.socketId) {
+
+          setTimeout(() => {
+            createOffer();
+          }, 500);
+
+        }
 
       }
 
@@ -123,9 +141,13 @@ const VideoCallMinimal = ({ roomId }) => {
 
       if (socketId === socket.id) return;
 
-      setTimeout(() => {
-        createOffer();
-      }, 500);
+      if (socket.id < socketId) {
+
+        setTimeout(() => {
+          createOffer();
+        }, 500);
+
+      }
 
     });
 
@@ -143,7 +165,8 @@ const VideoCallMinimal = ({ roomId }) => {
 
       socket.emit("answer", {
         roomId,
-        answer
+        answer,
+        from: socket.id
       });
 
     });
@@ -158,19 +181,23 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    socket.on("ice-candidate", async ({ candidate }) => {
+    socket.on("ice-candidate", async ({ candidate, from }) => {
+
+      if (from === socket.id) return;
 
       const pc = peerConnectionRef.current;
 
       try {
 
-        if (candidate) {
+        if (candidate && pc) {
+
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
+
         }
 
       } catch (err) {
 
-        console.log("ICE error", err);
+        console.log("ICE error:", err);
 
       }
 
@@ -199,11 +226,9 @@ const VideoCallMinimal = ({ roomId }) => {
   const toggleCamera = () => {
 
     const track = localStreamRef.current?.getVideoTracks()[0];
-
     if (!track) return;
 
     track.enabled = !track.enabled;
-
     setCameraOn(track.enabled);
 
   };
@@ -211,11 +236,9 @@ const VideoCallMinimal = ({ roomId }) => {
   const toggleMic = () => {
 
     const track = localStreamRef.current?.getAudioTracks()[0];
-
     if (!track) return;
 
     track.enabled = !track.enabled;
-
     setMicOn(track.enabled);
 
   };
