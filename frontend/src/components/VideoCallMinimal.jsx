@@ -32,21 +32,28 @@ const VideoCallMinimal = ({ roomId }) => {
       });
 
       pc.ontrack = (event) => {
+
         const stream = event.streams[0];
         setRemoteStream(stream);
 
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = stream;
         }
+
       };
 
       pc.onicecandidate = (event) => {
+
         if (event.candidate) {
+
           socket.emit("ice-candidate", {
             roomId,
-            candidate: event.candidate
+            candidate: event.candidate,
+            from: socket.id
           });
+
         }
+
       };
 
       return pc;
@@ -54,29 +61,37 @@ const VideoCallMinimal = ({ roomId }) => {
 
     const start = async () => {
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true
-      });
+      try {
 
-      localStreamRef.current = stream;
+        if (!socket.connected) socket.connect();
 
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true
+        });
+
+        localStreamRef.current = stream;
+
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+        }
+
+        const pc = createPeerConnection();
+        pcRef.current = pc;
+
+        stream.getTracks().forEach(track => {
+          pc.addTrack(track, stream);
+        });
+
+        socket.emit("join-room", {
+          roomId,
+          userId: socket.id,
+          userName: "User"
+        });
+
+      } catch (err) {
+        console.log("Media error:", err);
       }
-
-      const pc = createPeerConnection();
-      pcRef.current = pc;
-
-      stream.getTracks().forEach(track => {
-        pc.addTrack(track, stream);
-      });
-
-      socket.emit("join-room", {
-        roomId,
-        userId: socket.id,
-        userName: "User"
-      });
 
     };
 
@@ -85,11 +100,16 @@ const VideoCallMinimal = ({ roomId }) => {
     const createOffer = async () => {
 
       const pc = pcRef.current;
+      if (!pc) return;
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      socket.emit("offer", { roomId, offer });
+      socket.emit("offer", {
+        roomId,
+        offer,
+        from: socket.id
+      });
 
     };
 
@@ -100,7 +120,7 @@ const VideoCallMinimal = ({ roomId }) => {
         const other = users.find(u => u.socketId !== socket.id);
 
         if (other && socket.id < other.socketId) {
-          setTimeout(createOffer, 500);
+          setTimeout(createOffer, 600);
         }
 
       }
@@ -112,12 +132,14 @@ const VideoCallMinimal = ({ roomId }) => {
       if (socketId === socket.id) return;
 
       if (socket.id < socketId) {
-        setTimeout(createOffer, 500);
+        setTimeout(createOffer, 600);
       }
 
     });
 
-    socket.on("offer", async ({ offer }) => {
+    socket.on("offer", async ({ offer, from }) => {
+
+      if (from === socket.id) return;
 
       const pc = pcRef.current;
 
@@ -126,11 +148,17 @@ const VideoCallMinimal = ({ roomId }) => {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      socket.emit("answer", { roomId, answer });
+      socket.emit("answer", {
+        roomId,
+        answer,
+        from: socket.id
+      });
 
     });
 
-    socket.on("answer", async ({ answer }) => {
+    socket.on("answer", async ({ answer, from }) => {
+
+      if (from === socket.id) return;
 
       const pc = pcRef.current;
 
@@ -144,7 +172,9 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    socket.on("ice-candidate", async ({ candidate }) => {
+    socket.on("ice-candidate", async ({ candidate, from }) => {
+
+      if (from === socket.id) return;
 
       const pc = pcRef.current;
       const ice = new RTCIceCandidate(candidate);
@@ -168,7 +198,7 @@ const VideoCallMinimal = ({ roomId }) => {
       if (pcRef.current) pcRef.current.close();
 
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(t => t.stop());
+        localStreamRef.current.getTracks().forEach(track => track.stop());
       }
 
     };
