@@ -57,13 +57,14 @@ const VideoCallMinimal = ({ roomId }) => {
       };
 
       return pc;
+
     };
 
-    const start = async () => {
+    socket.connect();
+
+    socket.on("connect", async () => {
 
       try {
-
-        if (!socket.connected) socket.connect();
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -90,12 +91,12 @@ const VideoCallMinimal = ({ roomId }) => {
         });
 
       } catch (err) {
+
         console.log("Media error:", err);
+
       }
 
-    };
-
-    start();
+    });
 
     const createOffer = async () => {
 
@@ -189,6 +190,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     return () => {
 
+      socket.off("connect");
       socket.off("existing-users");
       socket.off("user-joined");
       socket.off("offer");
