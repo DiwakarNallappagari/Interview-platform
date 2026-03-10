@@ -14,12 +14,14 @@ export const initializeSocketHandlers = (io) => {
 
       try {
 
+        if (!roomId) return
+
         // Prevent duplicate join
         if (socket.data?.roomId === roomId) return
 
         const room = io.sockets.adapter.rooms.get(roomId)
 
-        // Limit to 2 participants (interviewer + candidate)
+        // Limit room to 2 users
         if (room && room.size >= 2) {
           socket.emit('room-full')
           return
@@ -39,28 +41,30 @@ export const initializeSocketHandlers = (io) => {
         if (
           interview &&
           !interview.candidate &&
-          userId !== interview.interviewer.toString()
+          userId !== interview.interviewer?.toString()
         ) {
           interview.candidate = userId
           await interview.save()
         }
 
-        // Get users currently in room
         const clients = await io.in(roomId).fetchSockets()
 
-        const users = clients.map(s => ({
-          socketId: s.id,
-          userId: s.data?.userId,
-          userName: s.data?.userName
-        }))
+        // REMOVE CURRENT USER
+        const users = clients
+          .filter(s => s.id !== socket.id)
+          .map(s => ({
+            socketId: s.id,
+            userId: s.data?.userId,
+            userName: s.data?.userName
+          }))
 
-        // Send existing users to newly joined user
+        // Send existing users
         socket.emit('existing-users', users)
 
-        // Broadcast participants list
+        // Broadcast updated room
         io.to(roomId).emit('room-joined', { users })
 
-        // Notify others (small delay for WebRTC stability)
+        // Notify others
         setTimeout(() => {
 
           socket.to(roomId).emit('user-joined', {
@@ -69,7 +73,9 @@ export const initializeSocketHandlers = (io) => {
             userName
           })
 
-        }, 200)
+        }, 300)
+
+        console.log(`User ${socket.id} joined room ${roomId}`)
 
       } catch (err) {
 
@@ -108,7 +114,7 @@ export const initializeSocketHandlers = (io) => {
 
 
     // ==============================
-    // TYPING INDICATOR
+    // TYPING
     // ==============================
     socket.on('typing', ({ roomId, typing }) => {
 
@@ -122,7 +128,7 @@ export const initializeSocketHandlers = (io) => {
 
 
     // ==============================
-    // CHAT MESSAGE
+    // CHAT
     // ==============================
     socket.on('chat-message', async ({ roomId, message }) => {
 
@@ -146,7 +152,7 @@ export const initializeSocketHandlers = (io) => {
 
       } catch (err) {
 
-        console.error('Chat message error:', err)
+        console.error('Chat error:', err)
 
       }
 
@@ -170,6 +176,8 @@ export const initializeSocketHandlers = (io) => {
 
       if (!roomId || !offer) return
 
+      console.log('Offer from:', socket.id)
+
       socket.to(roomId).emit('offer', {
         offer,
         from: socket.id
@@ -184,6 +192,8 @@ export const initializeSocketHandlers = (io) => {
     socket.on('answer', ({ roomId, answer }) => {
 
       if (!roomId || !answer) return
+
+      console.log('Answer from:', socket.id)
 
       socket.to(roomId).emit('answer', {
         answer,
@@ -224,7 +234,7 @@ export const initializeSocketHandlers = (io) => {
         )
 
         io.to(roomId).emit('interview-ended', {
-          message: 'Interview has ended'
+          message: 'Interview ended'
         })
 
         socket.leave(roomId)
