@@ -34,6 +34,7 @@ const VideoCallMinimal = ({ roomId }) => {
       pc.ontrack = (event) => {
 
         const stream = event.streams[0];
+
         setRemoteStream(stream);
 
         if (remoteVideoRef.current) {
@@ -60,11 +61,11 @@ const VideoCallMinimal = ({ roomId }) => {
 
     };
 
-    socket.connect();
-
-    socket.on("connect", async () => {
+    const start = async () => {
 
       try {
+
+        if (!socket.connected) socket.connect();
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -96,7 +97,9 @@ const VideoCallMinimal = ({ roomId }) => {
 
       }
 
-    });
+    };
+
+    start();
 
     const createOffer = async () => {
 
@@ -143,8 +146,13 @@ const VideoCallMinimal = ({ roomId }) => {
       if (from === socket.id) return;
 
       const pc = pcRef.current;
+      if (!pc) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+      while (pendingCandidates.current.length) {
+        await pc.addIceCandidate(pendingCandidates.current.shift());
+      }
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
@@ -162,14 +170,13 @@ const VideoCallMinimal = ({ roomId }) => {
       if (from === socket.id) return;
 
       const pc = pcRef.current;
+      if (!pc) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
-      pendingCandidates.current.forEach(c =>
-        pc.addIceCandidate(c)
-      );
-
-      pendingCandidates.current = [];
+      while (pendingCandidates.current.length) {
+        await pc.addIceCandidate(pendingCandidates.current.shift());
+      }
 
     });
 
@@ -178,19 +185,28 @@ const VideoCallMinimal = ({ roomId }) => {
       if (from === socket.id) return;
 
       const pc = pcRef.current;
+      if (!pc) return;
+
       const ice = new RTCIceCandidate(candidate);
 
-      if (pc.remoteDescription) {
-        await pc.addIceCandidate(ice);
-      } else {
-        pendingCandidates.current.push(ice);
+      try {
+
+        if (pc.remoteDescription) {
+          await pc.addIceCandidate(ice);
+        } else {
+          pendingCandidates.current.push(ice);
+        }
+
+      } catch (err) {
+
+        console.log("ICE error:", err);
+
       }
 
     });
 
     return () => {
 
-      socket.off("connect");
       socket.off("existing-users");
       socket.off("user-joined");
       socket.off("offer");

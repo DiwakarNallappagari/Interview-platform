@@ -14,11 +14,12 @@ export const initializeSocketHandlers = (io) => {
 
       try {
 
+        // Prevent duplicate join
         if (socket.data?.roomId === roomId) return
 
         const room = io.sockets.adapter.rooms.get(roomId)
 
-        // Limit to 2 participants
+        // Limit to 2 participants (interviewer + candidate)
         if (room && room.size >= 2) {
           socket.emit('room-full')
           return
@@ -44,6 +45,7 @@ export const initializeSocketHandlers = (io) => {
           await interview.save()
         }
 
+        // Get users currently in room
         const clients = await io.in(roomId).fetchSockets()
 
         const users = clients.map(s => ({
@@ -52,10 +54,13 @@ export const initializeSocketHandlers = (io) => {
           userName: s.data?.userName
         }))
 
+        // Send existing users to newly joined user
         socket.emit('existing-users', users)
 
+        // Broadcast participants list
         io.to(roomId).emit('room-joined', { users })
 
+        // Notify others (small delay for WebRTC stability)
         setTimeout(() => {
 
           socket.to(roomId).emit('user-joined', {
@@ -161,13 +166,13 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // WEBRTC OFFER
     // ==============================
-    socket.on('offer', ({ roomId, offer, from }) => {
+    socket.on('offer', ({ roomId, offer }) => {
 
       if (!roomId || !offer) return
 
       socket.to(roomId).emit('offer', {
         offer,
-        from
+        from: socket.id
       })
 
     })
@@ -176,13 +181,13 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // WEBRTC ANSWER
     // ==============================
-    socket.on('answer', ({ roomId, answer, from }) => {
+    socket.on('answer', ({ roomId, answer }) => {
 
       if (!roomId || !answer) return
 
       socket.to(roomId).emit('answer', {
         answer,
-        from
+        from: socket.id
       })
 
     })
@@ -191,13 +196,13 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // ICE CANDIDATE
     // ==============================
-    socket.on('ice-candidate', ({ roomId, candidate, from }) => {
+    socket.on('ice-candidate', ({ roomId, candidate }) => {
 
       if (!candidate || !roomId) return
 
       socket.to(roomId).emit('ice-candidate', {
         candidate,
-        from
+        from: socket.id
       })
 
     })
