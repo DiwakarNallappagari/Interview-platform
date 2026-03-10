@@ -6,9 +6,9 @@ const VideoCallMinimal = ({ roomId }) => {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
 
-  const peerConnectionRef = useRef(null);
+  const pcRef = useRef(null);
   const localStreamRef = useRef(null);
-  const pendingCandidatesRef = useRef([]);
+  const pendingCandidates = useRef([]);
 
   const [remoteStream, setRemoteStream] = useState(null);
   const [cameraOn, setCameraOn] = useState(true);
@@ -27,20 +27,16 @@ const VideoCallMinimal = ({ roomId }) => {
             urls: "turn:openrelay.metered.ca:80",
             username: "openrelayproject",
             credential: "openrelayproject"
-          },
-          {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject"
           }
         ]
       });
 
       pc.ontrack = (event) => {
-        const remote = event.streams[0];
-        setRemoteStream(remote);
+        const stream = event.streams[0];
+        setRemoteStream(stream);
+
         if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remote;
+          remoteVideoRef.current.srcObject = stream;
         }
       };
 
@@ -53,63 +49,47 @@ const VideoCallMinimal = ({ roomId }) => {
         }
       };
 
-      pc.onconnectionstatechange = () => {
-        console.log("WebRTC state:", pc.connectionState);
-      };
-
       return pc;
     };
 
-    const init = async () => {
+    const start = async () => {
 
-      try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      });
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true
-        });
+      localStreamRef.current = stream;
 
-        localStreamRef.current = stream;
-
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-        }
-
-        const pc = createPeerConnection();
-        peerConnectionRef.current = pc;
-
-        stream.getTracks().forEach(track => {
-          pc.addTrack(track, stream);
-        });
-
-        if (!socket.connected) socket.connect();
-
-        socket.emit("join-room", {
-          roomId,
-          userId: socket.id,
-          userName: "User"
-        });
-
-      } catch (err) {
-        console.log("Media error:", err);
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
       }
+
+      const pc = createPeerConnection();
+      pcRef.current = pc;
+
+      stream.getTracks().forEach(track => {
+        pc.addTrack(track, stream);
+      });
+
+      socket.emit("join-room", {
+        roomId,
+        userId: socket.id,
+        userName: "User"
+      });
 
     };
 
-    init();
+    start();
 
     const createOffer = async () => {
 
-      const pc = peerConnectionRef.current;
-      if (!pc) return;
+      const pc = pcRef.current;
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      socket.emit("offer", {
-        roomId,
-        offer
-      });
+      socket.emit("offer", { roomId, offer });
 
     };
 
@@ -137,51 +117,42 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    socket.on("offer", async ({ offer, from }) => {
+    socket.on("offer", async ({ offer }) => {
 
-      if (from === socket.id) return;
-
-      const pc = peerConnectionRef.current;
+      const pc = pcRef.current;
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      socket.emit("answer", {
-        roomId,
-        answer
-      });
+      socket.emit("answer", { roomId, answer });
 
     });
 
-    socket.on("answer", async ({ answer, from }) => {
+    socket.on("answer", async ({ answer }) => {
 
-      if (from === socket.id) return;
-
-      const pc = peerConnectionRef.current;
+      const pc = pcRef.current;
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
-      pendingCandidatesRef.current.forEach(c =>
+      pendingCandidates.current.forEach(c =>
         pc.addIceCandidate(c)
       );
 
-      pendingCandidatesRef.current = [];
+      pendingCandidates.current = [];
 
     });
 
-    socket.on("ice-candidate", async ({ candidate, from }) => {
+    socket.on("ice-candidate", async ({ candidate }) => {
 
-      if (from === socket.id) return;
-
-      const pc = peerConnectionRef.current;
+      const pc = pcRef.current;
       const ice = new RTCIceCandidate(candidate);
 
       if (pc.remoteDescription) {
         await pc.addIceCandidate(ice);
       } else {
-        pendingCandidatesRef.current.push(ice);
+        pendingCandidates.current.push(ice);
       }
 
     });
@@ -194,12 +165,10 @@ const VideoCallMinimal = ({ roomId }) => {
       socket.off("answer");
       socket.off("ice-candidate");
 
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.close();
-      }
+      if (pcRef.current) pcRef.current.close();
 
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current.getTracks().forEach(t => t.stop());
       }
 
     };
@@ -236,7 +205,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
       const screenTrack = screenStream.getVideoTracks()[0];
 
-      const sender = peerConnectionRef.current
+      const sender = pcRef.current
         ?.getSenders()
         .find(s => s.track?.kind === "video");
 
@@ -261,7 +230,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
 
-    const sender = peerConnectionRef.current
+    const sender = pcRef.current
       ?.getSenders()
       .find(s => s.track?.kind === "video");
 
