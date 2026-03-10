@@ -22,50 +22,53 @@ const VideoCallMinimal = ({ roomId }) => {
       const pc = new RTCPeerConnection({
         iceServers: [
           { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" }
+          { urls: "stun:stun1.l.google.com:19302" },
+
+          {
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          },
+          {
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          },
+          {
+            urls: "turn:openrelay.metered.ca:443?transport=tcp",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          }
         ]
       });
 
-      // Receive remote stream
       pc.ontrack = (event) => {
-
         const remote = event.streams[0];
         setRemoteStream(remote);
 
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = remote;
         }
-
       };
 
-      // Send ICE candidate
       pc.onicecandidate = (event) => {
-
         if (event.candidate) {
-
           socket.emit("ice-candidate", {
             roomId,
             candidate: event.candidate,
             from: socket.id
           });
-
         }
-
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        console.log("ICE State:", pc.iceConnectionState);
       };
 
       pc.onconnectionstatechange = () => {
-        console.log("Connection State:", pc.connectionState);
+        console.log("WebRTC state:", pc.connectionState);
       };
 
       return pc;
     };
 
     const init = async () => {
-
       try {
 
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -95,11 +98,8 @@ const VideoCallMinimal = ({ roomId }) => {
         });
 
       } catch (err) {
-
         console.log("Media error:", err);
-
       }
-
     };
 
     init();
@@ -121,14 +121,10 @@ const VideoCallMinimal = ({ roomId }) => {
         });
 
       } catch (err) {
-
         console.log("Offer error:", err);
-
       }
-
     };
 
-    // If room already has users
     socket.on("existing-users", (users) => {
 
       if (users.length > 1) {
@@ -136,29 +132,23 @@ const VideoCallMinimal = ({ roomId }) => {
         const other = users.find(u => u.socketId !== socket.id);
 
         if (other && socket.id < other.socketId) {
-
-          setTimeout(createOffer, 700);
-
+          setTimeout(createOffer, 500);
         }
 
       }
 
     });
 
-    // When new user joins
     socket.on("user-joined", ({ socketId }) => {
 
       if (socketId === socket.id) return;
 
       if (socket.id < socketId) {
-
-        setTimeout(createOffer, 700);
-
+        setTimeout(createOffer, 500);
       }
 
     });
 
-    // Receive offer
     socket.on("offer", async ({ offer, from }) => {
 
       if (from === socket.id) return;
@@ -179,14 +169,11 @@ const VideoCallMinimal = ({ roomId }) => {
         });
 
       } catch (err) {
-
         console.log("Offer handling error:", err);
-
       }
 
     });
 
-    // Receive answer
     socket.on("answer", async ({ answer, from }) => {
 
       if (from === socket.id) return;
@@ -204,14 +191,11 @@ const VideoCallMinimal = ({ roomId }) => {
         pendingCandidatesRef.current = [];
 
       } catch (err) {
-
         console.log("Answer error:", err);
-
       }
 
     });
 
-    // Receive ICE
     socket.on("ice-candidate", async ({ candidate, from }) => {
 
       if (from === socket.id) return;
@@ -222,19 +206,13 @@ const VideoCallMinimal = ({ roomId }) => {
       try {
 
         if (pc.remoteDescription) {
-
           await pc.addIceCandidate(ice);
-
         } else {
-
           pendingCandidatesRef.current.push(ice);
-
         }
 
       } catch (err) {
-
         console.log("ICE error:", err);
-
       }
 
     });
