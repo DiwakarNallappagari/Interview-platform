@@ -23,7 +23,6 @@ const VideoCallMinimal = ({ roomId }) => {
         iceServers: [
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun1.l.google.com:19302" },
-
           {
             urls: "turn:openrelay.metered.ca:80",
             username: "openrelayproject",
@@ -33,11 +32,6 @@ const VideoCallMinimal = ({ roomId }) => {
             urls: "turn:openrelay.metered.ca:443",
             username: "openrelayproject",
             credential: "openrelayproject"
-          },
-          {
-            urls: "turn:openrelay.metered.ca:443?transport=tcp",
-            username: "openrelayproject",
-            credential: "openrelayproject"
           }
         ]
       });
@@ -45,7 +39,6 @@ const VideoCallMinimal = ({ roomId }) => {
       pc.ontrack = (event) => {
         const remote = event.streams[0];
         setRemoteStream(remote);
-
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = remote;
         }
@@ -55,8 +48,7 @@ const VideoCallMinimal = ({ roomId }) => {
         if (event.candidate) {
           socket.emit("ice-candidate", {
             roomId,
-            candidate: event.candidate,
-            from: socket.id
+            candidate: event.candidate
           });
         }
       };
@@ -69,6 +61,7 @@ const VideoCallMinimal = ({ roomId }) => {
     };
 
     const init = async () => {
+
       try {
 
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -100,6 +93,7 @@ const VideoCallMinimal = ({ roomId }) => {
       } catch (err) {
         console.log("Media error:", err);
       }
+
     };
 
     init();
@@ -109,20 +103,14 @@ const VideoCallMinimal = ({ roomId }) => {
       const pc = peerConnectionRef.current;
       if (!pc) return;
 
-      try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
+      socket.emit("offer", {
+        roomId,
+        offer
+      });
 
-        socket.emit("offer", {
-          roomId,
-          offer,
-          from: socket.id
-        });
-
-      } catch (err) {
-        console.log("Offer error:", err);
-      }
     };
 
     socket.on("existing-users", (users) => {
@@ -155,22 +143,15 @@ const VideoCallMinimal = ({ roomId }) => {
 
       const pc = peerConnectionRef.current;
 
-      try {
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
-        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
 
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-
-        socket.emit("answer", {
-          roomId,
-          answer,
-          from: socket.id
-        });
-
-      } catch (err) {
-        console.log("Offer handling error:", err);
-      }
+      socket.emit("answer", {
+        roomId,
+        answer
+      });
 
     });
 
@@ -180,19 +161,13 @@ const VideoCallMinimal = ({ roomId }) => {
 
       const pc = peerConnectionRef.current;
 
-      try {
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      pendingCandidatesRef.current.forEach(c =>
+        pc.addIceCandidate(c)
+      );
 
-        pendingCandidatesRef.current.forEach(c =>
-          pc.addIceCandidate(c)
-        );
-
-        pendingCandidatesRef.current = [];
-
-      } catch (err) {
-        console.log("Answer error:", err);
-      }
+      pendingCandidatesRef.current = [];
 
     });
 
@@ -203,16 +178,10 @@ const VideoCallMinimal = ({ roomId }) => {
       const pc = peerConnectionRef.current;
       const ice = new RTCIceCandidate(candidate);
 
-      try {
-
-        if (pc.remoteDescription) {
-          await pc.addIceCandidate(ice);
-        } else {
-          pendingCandidatesRef.current.push(ice);
-        }
-
-      } catch (err) {
-        console.log("ICE error:", err);
+      if (pc.remoteDescription) {
+        await pc.addIceCandidate(ice);
+      } else {
+        pendingCandidatesRef.current.push(ice);
       }
 
     });
