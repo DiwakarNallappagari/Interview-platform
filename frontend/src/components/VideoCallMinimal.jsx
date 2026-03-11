@@ -17,12 +17,13 @@ const VideoCallMinimal = ({ roomId }) => {
 
   useEffect(() => {
 
+    let isMounted = true;
+
     const createPeerConnection = () => {
 
       const pc = new RTCPeerConnection({
         iceServers: [
           { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
           {
             urls: [
               "turn:openrelay.metered.ca:80",
@@ -47,23 +48,27 @@ const VideoCallMinimal = ({ roomId }) => {
       };
 
       pc.onicecandidate = (event) => {
+
         if (event.candidate) {
+
           socket.emit("ice-candidate", {
             roomId,
             candidate: event.candidate,
             from: socket.id
           });
+
         }
+
       };
 
       pc.onconnectionstatechange = () => {
-        console.log("WebRTC state:", pc.connectionState);
+        console.log("WebRTC connection:", pc.connectionState);
       };
 
       return pc;
     };
 
-    const start = async () => {
+    const startMedia = async () => {
 
       try {
 
@@ -73,6 +78,8 @@ const VideoCallMinimal = ({ roomId }) => {
           video: true,
           audio: true
         });
+
+        if (!isMounted) return;
 
         localStreamRef.current = stream;
 
@@ -88,12 +95,12 @@ const VideoCallMinimal = ({ roomId }) => {
         });
 
       } catch (err) {
-        console.log("Media error:", err);
+        console.error("Media error:", err);
       }
 
     };
 
-    start();
+    startMedia();
 
     const createOffer = async () => {
 
@@ -170,10 +177,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
-      while (pendingCandidates.current.length) {
-        await pc.addIceCandidate(pendingCandidates.current.shift());
-      }
-
     });
 
     socket.on("ice-candidate", async ({ candidate, from }) => {
@@ -185,21 +188,17 @@ const VideoCallMinimal = ({ roomId }) => {
 
       const ice = new RTCIceCandidate(candidate);
 
-      try {
-
-        if (pc.remoteDescription) {
-          await pc.addIceCandidate(ice);
-        } else {
-          pendingCandidates.current.push(ice);
-        }
-
-      } catch (err) {
-        console.log("ICE error:", err);
+      if (pc.remoteDescription) {
+        await pc.addIceCandidate(ice);
+      } else {
+        pendingCandidates.current.push(ice);
       }
 
     });
 
     return () => {
+
+      isMounted = false;
 
       socket.off("room-joined");
       socket.off("user-joined");
@@ -207,7 +206,9 @@ const VideoCallMinimal = ({ roomId }) => {
       socket.off("answer");
       socket.off("ice-candidate");
 
-      if (pcRef.current) pcRef.current.close();
+      if (pcRef.current) {
+        pcRef.current.close();
+      }
 
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
