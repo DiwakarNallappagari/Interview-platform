@@ -70,8 +70,8 @@ const VideoCallMinimal = ({ roomId }) => {
 
       };
 
-      pc.onconnectionstatechange = () => {
-        console.log("Connection state:", pc.connectionState);
+      pc.oniceconnectionstatechange = () => {
+        console.log("ICE STATE:", pc.iceConnectionState);
       };
 
       return pc;
@@ -83,6 +83,9 @@ const VideoCallMinimal = ({ roomId }) => {
       try {
 
         if (!socket.connected) socket.connect();
+
+        // ✅ JOIN ROOM (THIS WAS MISSING)
+        socket.emit("join-room", { roomId });
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -174,14 +177,10 @@ const VideoCallMinimal = ({ roomId }) => {
 
       if (ignoreOffer) return;
 
-      await pc.setRemoteDescription(
-        new RTCSessionDescription(offer)
-      );
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
       while (pendingCandidates.current.length) {
-        await pc.addIceCandidate(
-          pendingCandidates.current.shift()
-        );
+        await pc.addIceCandidate(pendingCandidates.current.shift());
       }
 
       const answer = await pc.createAnswer();
@@ -201,9 +200,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
       const pc = pcRef.current;
 
-      await pc.setRemoteDescription(
-        new RTCSessionDescription(answer)
-      );
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
     });
 
