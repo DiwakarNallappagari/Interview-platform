@@ -8,6 +8,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
+
   const pendingCandidates = useRef([]);
 
   const [remoteStream, setRemoteStream] = useState(null);
@@ -18,6 +19,9 @@ const VideoCallMinimal = ({ roomId }) => {
   useEffect(() => {
 
     let isMounted = true;
+
+    let makingOffer = false;
+    let polite = false;
 
     const createPeerConnection = () => {
 
@@ -38,6 +42,7 @@ const VideoCallMinimal = ({ roomId }) => {
       });
 
       pc.ontrack = (event) => {
+
         const stream = event.streams[0];
 
         if (remoteVideoRef.current) {
@@ -45,6 +50,7 @@ const VideoCallMinimal = ({ roomId }) => {
         }
 
         setRemoteStream(stream);
+
       };
 
       pc.onicecandidate = (event) => {
@@ -62,10 +68,11 @@ const VideoCallMinimal = ({ roomId }) => {
       };
 
       pc.onconnectionstatechange = () => {
-        console.log("WebRTC connection:", pc.connectionState);
+        console.log("Connection state:", pc.connectionState);
       };
 
       return pc;
+
     };
 
     const startMedia = async () => {
@@ -107,28 +114,38 @@ const VideoCallMinimal = ({ roomId }) => {
       const pc = pcRef.current;
       if (!pc) return;
 
-      const offer = await pc.createOffer();
+      if (pc.signalingState !== "stable") return;
 
-      await pc.setLocalDescription(offer);
+      try {
 
-      socket.emit("offer", {
-        roomId,
-        offer,
-        from: socket.id
-      });
+        makingOffer = true;
+
+        const offer = await pc.createOffer();
+
+        await pc.setLocalDescription(offer);
+
+        socket.emit("offer", {
+          roomId,
+          offer,
+          from: socket.id
+        });
+
+      } finally {
+        makingOffer = false;
+      }
 
     };
 
     socket.on("room-joined", ({ users }) => {
 
-      if (users.length > 1) {
+      const other = users.find(u => u.socketId !== socket.id);
 
-        const other = users.find(u => u.socketId !== socket.id);
+      if (!other) return;
 
-        if (other && socket.id < other.socketId) {
-          setTimeout(createOffer, 500);
-        }
+      polite = socket.id > other.socketId;
 
+      if (!polite) {
+        setTimeout(createOffer, 500);
       }
 
     });
@@ -137,7 +154,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
       if (socketId === socket.id) return;
 
-      if (socket.id < socketId) {
+      if (!polite) {
         setTimeout(createOffer, 500);
       }
 
@@ -148,12 +165,22 @@ const VideoCallMinimal = ({ roomId }) => {
       if (from === socket.id) return;
 
       const pc = pcRef.current;
-      if (!pc) return;
 
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const offerCollision =
+        makingOffer || pc.signalingState !== "stable";
+
+      const ignoreOffer = !polite && offerCollision;
+
+      if (ignoreOffer) return;
+
+      await pc.setRemoteDescription(
+        new RTCSessionDescription(offer)
+      );
 
       while (pendingCandidates.current.length) {
-        await pc.addIceCandidate(pendingCandidates.current.shift());
+        await pc.addIceCandidate(
+          pendingCandidates.current.shift()
+        );
       }
 
       const answer = await pc.createAnswer();
@@ -173,9 +200,10 @@ const VideoCallMinimal = ({ roomId }) => {
       if (from === socket.id) return;
 
       const pc = pcRef.current;
-      if (!pc) return;
 
-      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      await pc.setRemoteDescription(
+        new RTCSessionDescription(answer)
+      );
 
     });
 
@@ -184,7 +212,6 @@ const VideoCallMinimal = ({ roomId }) => {
       if (from === socket.id) return;
 
       const pc = pcRef.current;
-      if (!pc) return;
 
       const ice = new RTCIceCandidate(candidate);
 
@@ -206,12 +233,12 @@ const VideoCallMinimal = ({ roomId }) => {
       socket.off("answer");
       socket.off("ice-candidate");
 
-      if (pcRef.current) {
-        pcRef.current.close();
-      }
+      if (pcRef.current) pcRef.current.close();
 
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current
+          .getTracks()
+          .forEach(track => track.stop());
       }
 
     };
@@ -220,20 +247,26 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const toggleCamera = () => {
 
-    const track = localStreamRef.current?.getVideoTracks()[0];
+    const track = localStreamRef.current
+      ?.getVideoTracks()[0];
+
     if (!track) return;
 
     track.enabled = !track.enabled;
+
     setCameraOn(track.enabled);
 
   };
 
   const toggleMic = () => {
 
-    const track = localStreamRef.current?.getAudioTracks()[0];
+    const track = localStreamRef.current
+      ?.getAudioTracks()[0];
+
     if (!track) return;
 
     track.enabled = !track.enabled;
+
     setMicOn(track.enabled);
 
   };
@@ -242,11 +275,13 @@ const VideoCallMinimal = ({ roomId }) => {
 
     if (!screenSharing) {
 
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true
-      });
+      const screenStream =
+        await navigator.mediaDevices.getDisplayMedia({
+          video: true
+        });
 
-      const screenTrack = screenStream.getVideoTracks()[0];
+      const screenTrack =
+        screenStream.getVideoTracks()[0];
 
       const sender = pcRef.current
         ?.getSenders()
@@ -272,16 +307,20 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const stopScreenShare = () => {
 
-    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+    const videoTrack =
+      localStreamRef.current?.getVideoTracks()[0];
 
     const sender = pcRef.current
       ?.getSenders()
       .find(s => s.track?.kind === "video");
 
-    if (sender && videoTrack) sender.replaceTrack(videoTrack);
+    if (sender && videoTrack) {
+      sender.replaceTrack(videoTrack);
+    }
 
     if (localVideoRef.current) {
-      localVideoRef.current.srcObject = localStreamRef.current;
+      localVideoRef.current.srcObject =
+        localStreamRef.current;
     }
 
     setScreenSharing(false);
