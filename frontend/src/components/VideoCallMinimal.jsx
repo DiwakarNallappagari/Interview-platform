@@ -28,13 +28,13 @@ const VideoCallMinimal = ({ roomId }) => {
             username: "openrelayproject",
             credential: "openrelayproject"
           }
-        ]
+        ],
+        iceCandidatePoolSize: 10
       });
 
       pc.ontrack = (event) => {
 
         const stream = event.streams[0];
-
         setRemoteStream(stream);
 
         if (remoteVideoRef.current) {
@@ -85,12 +85,6 @@ const VideoCallMinimal = ({ roomId }) => {
           pc.addTrack(track, stream);
         });
 
-        socket.emit("join-room", {
-          roomId,
-          userId: socket.id,
-          userName: "User"
-        });
-
       } catch (err) {
 
         console.log("Media error:", err);
@@ -117,30 +111,39 @@ const VideoCallMinimal = ({ roomId }) => {
 
     };
 
-    socket.on("existing-users", (users) => {
+    // ==============================
+    // ROOM JOINED
+    // ==============================
+    socket.on("room-joined", ({ users }) => {
 
       if (users.length > 1) {
 
         const other = users.find(u => u.socketId !== socket.id);
 
         if (other && socket.id < other.socketId) {
-          setTimeout(createOffer, 600);
+          setTimeout(createOffer, 500);
         }
 
       }
 
     });
 
+    // ==============================
+    // USER JOINED
+    // ==============================
     socket.on("user-joined", ({ socketId }) => {
 
       if (socketId === socket.id) return;
 
       if (socket.id < socketId) {
-        setTimeout(createOffer, 600);
+        setTimeout(createOffer, 500);
       }
 
     });
 
+    // ==============================
+    // RECEIVE OFFER
+    // ==============================
     socket.on("offer", async ({ offer, from }) => {
 
       if (from === socket.id) return;
@@ -165,6 +168,9 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
+    // ==============================
+    // RECEIVE ANSWER
+    // ==============================
     socket.on("answer", async ({ answer, from }) => {
 
       if (from === socket.id) return;
@@ -180,6 +186,9 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
+    // ==============================
+    // ICE CANDIDATES
+    // ==============================
     socket.on("ice-candidate", async ({ candidate, from }) => {
 
       if (from === socket.id) return;
@@ -207,7 +216,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     return () => {
 
-      socket.off("existing-users");
+      socket.off("room-joined");
       socket.off("user-joined");
       socket.off("offer");
       socket.off("answer");
@@ -223,6 +232,9 @@ const VideoCallMinimal = ({ roomId }) => {
 
   }, [roomId]);
 
+  // ==============================
+  // CAMERA
+  // ==============================
   const toggleCamera = () => {
 
     const track = localStreamRef.current?.getVideoTracks()[0];
@@ -233,6 +245,9 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
+  // ==============================
+  // MIC
+  // ==============================
   const toggleMic = () => {
 
     const track = localStreamRef.current?.getAudioTracks()[0];
@@ -243,6 +258,9 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
+  // ==============================
+  // SCREEN SHARE
+  // ==============================
   const toggleScreenShare = async () => {
 
     if (!screenSharing) {
@@ -264,6 +282,7 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
       screenTrack.onended = stopScreenShare;
+
       setScreenSharing(true);
 
     } else {
@@ -307,7 +326,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
         {!remoteStream && (
           <div className="absolute inset-0 flex items-center justify-center text-white">
-            Waiting for participant...
+            Connecting to participant...
           </div>
         )}
 
