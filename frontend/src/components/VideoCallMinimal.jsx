@@ -24,7 +24,11 @@ const VideoCallMinimal = ({ roomId }) => {
           { urls: "stun:stun.l.google.com:19302" },
           { urls: "stun:stun1.l.google.com:19302" },
           {
-            urls: "turn:openrelay.metered.ca:80",
+            urls: [
+              "turn:openrelay.metered.ca:80",
+              "turn:openrelay.metered.ca:443",
+              "turn:openrelay.metered.ca:443?transport=tcp"
+            ],
             username: "openrelayproject",
             credential: "openrelayproject"
           }
@@ -33,32 +37,30 @@ const VideoCallMinimal = ({ roomId }) => {
       });
 
       pc.ontrack = (event) => {
-
         const stream = event.streams[0];
-        setRemoteStream(stream);
 
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = stream;
         }
 
+        setRemoteStream(stream);
       };
 
       pc.onicecandidate = (event) => {
-
         if (event.candidate) {
-
           socket.emit("ice-candidate", {
             roomId,
             candidate: event.candidate,
             from: socket.id
           });
-
         }
+      };
 
+      pc.onconnectionstatechange = () => {
+        console.log("WebRTC state:", pc.connectionState);
       };
 
       return pc;
-
     };
 
     const start = async () => {
@@ -86,9 +88,7 @@ const VideoCallMinimal = ({ roomId }) => {
         });
 
       } catch (err) {
-
         console.log("Media error:", err);
-
       }
 
     };
@@ -101,6 +101,7 @@ const VideoCallMinimal = ({ roomId }) => {
       if (!pc) return;
 
       const offer = await pc.createOffer();
+
       await pc.setLocalDescription(offer);
 
       socket.emit("offer", {
@@ -111,9 +112,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
     };
 
-    // ==============================
-    // ROOM JOINED
-    // ==============================
     socket.on("room-joined", ({ users }) => {
 
       if (users.length > 1) {
@@ -128,9 +126,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // ==============================
-    // USER JOINED
-    // ==============================
     socket.on("user-joined", ({ socketId }) => {
 
       if (socketId === socket.id) return;
@@ -141,9 +136,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // ==============================
-    // RECEIVE OFFER
-    // ==============================
     socket.on("offer", async ({ offer, from }) => {
 
       if (from === socket.id) return;
@@ -158,6 +150,7 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
       const answer = await pc.createAnswer();
+
       await pc.setLocalDescription(answer);
 
       socket.emit("answer", {
@@ -168,9 +161,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // ==============================
-    // RECEIVE ANSWER
-    // ==============================
     socket.on("answer", async ({ answer, from }) => {
 
       if (from === socket.id) return;
@@ -186,9 +176,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // ==============================
-    // ICE CANDIDATES
-    // ==============================
     socket.on("ice-candidate", async ({ candidate, from }) => {
 
       if (from === socket.id) return;
@@ -207,9 +194,7 @@ const VideoCallMinimal = ({ roomId }) => {
         }
 
       } catch (err) {
-
         console.log("ICE error:", err);
-
       }
 
     });
@@ -232,9 +217,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   }, [roomId]);
 
-  // ==============================
-  // CAMERA
-  // ==============================
   const toggleCamera = () => {
 
     const track = localStreamRef.current?.getVideoTracks()[0];
@@ -245,9 +227,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
-  // ==============================
-  // MIC
-  // ==============================
   const toggleMic = () => {
 
     const track = localStreamRef.current?.getAudioTracks()[0];
@@ -258,9 +237,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
-  // ==============================
-  // SCREEN SHARE
-  // ==============================
   const toggleScreenShare = async () => {
 
     if (!screenSharing) {
