@@ -8,6 +8,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(new MediaStream());
   const pendingCandidates = useRef([]);
 
   const [remoteStream, setRemoteStream] = useState(null);
@@ -35,20 +36,22 @@ const VideoCallMinimal = ({ roomId }) => {
         ]
       });
 
+      // RECEIVE REMOTE TRACKS
       pc.ontrack = (event) => {
 
-        const stream = event.streams[0];
+        console.log("Track received:", event.track.kind);
 
-        console.log("Remote stream received");
+        remoteStreamRef.current.addTrack(event.track);
 
         if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = stream;
+          remoteVideoRef.current.srcObject = remoteStreamRef.current;
         }
 
-        setRemoteStream(stream);
+        setRemoteStream(remoteStreamRef.current);
 
       };
 
+      // SEND ICE
       pc.onicecandidate = (event) => {
 
         if (event.candidate) {
@@ -175,10 +178,10 @@ const VideoCallMinimal = ({ roomId }) => {
       if (pcRef.current) pcRef.current.close();
 
       if (localStreamRef.current) {
-        localStreamRef.current
-          .getTracks()
-          .forEach(track => track.stop());
+        localStreamRef.current.getTracks().forEach(track => track.stop());
       }
+
+      remoteStreamRef.current = new MediaStream();
 
     };
 
