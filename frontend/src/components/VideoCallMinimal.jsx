@@ -20,7 +20,17 @@ const VideoCallMinimal = ({ roomId }) => {
 
       const pc = new RTCPeerConnection({
         iceServers: [
-          { urls: "stun:stun.l.google.com:19302" }
+          { urls: "stun:stun.l.google.com:19302" },
+          {
+            urls: [
+              "turn:global.relay.metered.ca:80",
+              "turn:global.relay.metered.ca:80?transport=tcp",
+              "turn:global.relay.metered.ca:443",
+              "turns:global.relay.metered.ca:443?transport=tcp"
+            ],
+            username: "openai",
+            credential: "openai"
+          }
         ]
       });
 
@@ -53,6 +63,10 @@ const VideoCallMinimal = ({ roomId }) => {
 
       pc.onconnectionstatechange = () => {
         console.log("Connection state:", pc.connectionState);
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log("ICE state:", pc.iceConnectionState);
       };
 
       return pc;
@@ -95,7 +109,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     startCall();
 
-    // SECOND USER TRIGGERS OFFER
+    // SECOND USER CREATES OFFER
     socket.on("user-joined", async () => {
 
       const pc = pcRef.current;
@@ -136,13 +150,21 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // ICE CANDIDATES
+    // RECEIVE ICE
     socket.on("ice-candidate", async ({ candidate }) => {
 
-      const pc = pcRef.current;
+      try {
 
-      if (candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        const pc = pcRef.current;
+
+        if (candidate) {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+
+      } catch (err) {
+
+        console.error("ICE error:", err);
+
       }
 
     });
