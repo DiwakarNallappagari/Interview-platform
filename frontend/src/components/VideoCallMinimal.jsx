@@ -11,6 +11,9 @@ const VideoCallMinimal = ({ roomId }) => {
   const remoteStreamRef = useRef(new MediaStream());
   const pendingCandidates = useRef([]);
 
+  const makingOffer = useRef(false);
+  const polite = useRef(false);
+
   const [remoteStream, setRemoteStream] = useState(null);
   const [cameraOn, setCameraOn] = useState(true);
   const [micOn, setMicOn] = useState(true);
@@ -36,10 +39,7 @@ const VideoCallMinimal = ({ roomId }) => {
         ]
       });
 
-      // Remote stream handler
       pc.ontrack = (event) => {
-
-        console.log("Track received:", event.track.kind);
 
         remoteStreamRef.current.addTrack(event.track);
 
@@ -51,7 +51,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
       };
 
-      // ICE candidates
       pc.onicecandidate = (event) => {
 
         if (event.candidate) {
@@ -108,38 +107,61 @@ const VideoCallMinimal = ({ roomId }) => {
 
     startCall();
 
-    // When room info arrives
-    socket.on("room-joined", async ({ users }) => {
+    socket.on("room-joined", ({ users }) => {
 
-      if (users.length === 2) {
+      const other = users.find(u => u.socketId !== socket.id);
 
-        const pc = pcRef.current;
+      if (!other) return;
+
+      polite.current = socket.id > other.socketId;
+
+      if (!polite.current) createOffer();
+
+    });
+
+    socket.on("user-joined", () => {
+
+      if (!polite.current) createOffer();
+
+    });
+
+    const createOffer = async () => {
+
+      const pc = pcRef.current;
+
+      if (!pc) return;
+
+      try {
+
+        makingOffer.current = true;
 
         const offer = await pc.createOffer();
+
         await pc.setLocalDescription(offer);
 
-        socket.emit("offer", { roomId, offer });
+        socket.emit("offer", {
+          roomId,
+          offer
+        });
+
+      } finally {
+
+        makingOffer.current = false;
 
       }
 
-    });
+    };
 
-    // When second user joins
-    socket.on("user-joined", async () => {
-
-      const pc = pcRef.current;
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      socket.emit("offer", { roomId, offer });
-
-    });
-
-    // Receive offer
     socket.on("offer", async ({ offer }) => {
 
       const pc = pcRef.current;
+
+      const offerCollision =
+        makingOffer.current || pc.signalingState !== "stable";
+
+      const ignoreOffer = !polite.current && offerCollision;
+
+      if (ignoreOffer) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
@@ -148,13 +170,13 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
       const answer = await pc.createAnswer();
+
       await pc.setLocalDescription(answer);
 
       socket.emit("answer", { roomId, answer });
 
     });
 
-    // Receive answer
     socket.on("answer", async ({ answer }) => {
 
       const pc = pcRef.current;
@@ -163,10 +185,10 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // Receive ICE
     socket.on("ice-candidate", async ({ candidate }) => {
 
       const pc = pcRef.current;
+
       const ice = new RTCIceCandidate(candidate);
 
       if (pc.remoteDescription) {
@@ -217,54 +239,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
-  const toggleScreenShare = async () => {
-
-    if (!screenSharing) {
-
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true
-      });
-
-      const screenTrack = screenStream.getVideoTracks()[0];
-
-      const sender = pcRef.current
-        ?.getSenders()
-        .find(s => s.track?.kind === "video");
-
-      if (sender) sender.replaceTrack(screenTrack);
-
-      localVideoRef.current.srcObject = screenStream;
-
-      screenTrack.onended = stopScreenShare;
-
-      setScreenSharing(true);
-
-    } else {
-
-      stopScreenShare();
-
-    }
-
-  };
-
-  const stopScreenShare = () => {
-
-    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
-
-    const sender = pcRef.current
-      ?.getSenders()
-      .find(s => s.track?.kind === "video");
-
-    if (sender && videoTrack) {
-      sender.replaceTrack(videoTrack);
-    }
-
-    localVideoRef.current.srcObject = localStreamRef.current;
-
-    setScreenSharing(false);
-
-  };
-
   return (
 
     <div className="bg-black flex flex-col h-full">
@@ -308,13 +282,6 @@ const VideoCallMinimal = ({ roomId }) => {
           className="bg-gray-700 px-4 py-2 rounded text-white"
         >
           {micOn ? "Mic On" : "Mic Off"}
-        </button>
-
-        <button
-          onClick={toggleScreenShare}
-          className="bg-gray-700 px-4 py-2 rounded text-white"
-        >
-          {screenSharing ? "Stop Share" : "Share Screen"}
         </button>
 
       </div>
