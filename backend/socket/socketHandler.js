@@ -16,12 +16,11 @@ export const initializeSocketHandlers = (io) => {
 
         if (!roomId) return;
 
-        // prevent duplicate join
         if (socket.data?.roomId === roomId) return;
 
         const room = io.sockets.adapter.rooms.get(roomId);
 
-        // limit to 2 participants
+        // limit room to 2 users
         if (room && room.size >= 2) {
           socket.emit("room-full");
           return;
@@ -62,13 +61,13 @@ export const initializeSocketHandlers = (io) => {
           userName: s.data?.userName
         }));
 
-        // Send only to the joining user
-        socket.emit("room-joined", { users });
+        // Send updated users list to everyone
+        io.to(roomId).emit("room-joined", { users });
 
-        // Notify others
-        socket.to(roomId).emit("user-joined", {
-          socketId: socket.id
-        });
+        // Start WebRTC only when 2 users present
+        if (users.length === 2) {
+          io.to(roomId).emit("start-call");
+        }
 
         console.log(`User ${socket.id} joined room ${roomId}`);
 

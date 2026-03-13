@@ -8,6 +8,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(new MediaStream());
   const pendingCandidates = useRef([]);
 
   const makingOffer = useRef(false);
@@ -38,24 +39,21 @@ const VideoCallMinimal = ({ roomId }) => {
         ]
       });
 
-      // Remote stream
       pc.ontrack = (event) => {
 
-        const stream = event.streams[0];
+        console.log("Remote track received");
 
-        if (!stream) return;
-
-        console.log("Remote stream received");
+        event.streams[0].getTracks().forEach(track => {
+          remoteStreamRef.current.addTrack(track);
+        });
 
         if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = stream;
+          remoteVideoRef.current.srcObject = remoteStreamRef.current;
         }
 
-        setRemoteStream(stream);
-
+        setRemoteStream(remoteStreamRef.current);
       };
 
-      // ICE candidate
       pc.onicecandidate = (event) => {
 
         if (event.candidate) {
@@ -78,14 +76,16 @@ const VideoCallMinimal = ({ roomId }) => {
       };
 
       return pc;
-
     };
+
 
     const startCall = async () => {
 
       try {
 
         if (!socket.connected) socket.connect();
+
+        const user = JSON.parse(localStorage.getItem("user"));
 
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -105,17 +105,23 @@ const VideoCallMinimal = ({ roomId }) => {
           pc.addTrack(track, stream);
         });
 
-        socket.emit("join-room", { roomId });
+        socket.emit("join-room", {
+          roomId,
+          userId: user?._id,
+          userName: user?.name
+        });
 
       } catch (err) {
 
         console.error("Media error:", err);
+        alert("Camera/Microphone permission required");
 
       }
 
     };
 
     startCall();
+
 
     socket.on("room-joined", ({ users }) => {
 
@@ -129,16 +135,17 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
+
     socket.on("user-joined", () => {
 
       if (!polite.current) createOffer();
 
     });
 
+
     const createOffer = async () => {
 
       const pc = pcRef.current;
-
       if (!pc) return;
 
       try {
@@ -146,7 +153,6 @@ const VideoCallMinimal = ({ roomId }) => {
         makingOffer.current = true;
 
         const offer = await pc.createOffer();
-
         await pc.setLocalDescription(offer);
 
         socket.emit("offer", { roomId, offer });
@@ -158,6 +164,7 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
     };
+
 
     socket.on("offer", async ({ offer }) => {
 
@@ -184,6 +191,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
+
     socket.on("answer", async ({ answer }) => {
 
       const pc = pcRef.current;
@@ -191,6 +199,7 @@ const VideoCallMinimal = ({ roomId }) => {
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
     });
+
 
     socket.on("ice-candidate", async ({ candidate }) => {
 
@@ -205,6 +214,7 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
     });
+
 
     return () => {
 
@@ -224,6 +234,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   }, [roomId]);
 
+
   const toggleCamera = () => {
 
     const track = localStreamRef.current?.getVideoTracks()[0];
@@ -236,6 +247,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
+
   const toggleMic = () => {
 
     const track = localStreamRef.current?.getAudioTracks()[0];
@@ -247,6 +259,7 @@ const VideoCallMinimal = ({ roomId }) => {
     setMicOn(track.enabled);
 
   };
+
 
   const toggleScreenShare = async () => {
 
@@ -278,6 +291,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
+
   const stopScreenShare = () => {
 
     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
@@ -295,6 +309,7 @@ const VideoCallMinimal = ({ roomId }) => {
     setScreenSharing(false);
 
   };
+
 
   return (
 

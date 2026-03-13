@@ -24,7 +24,7 @@ const Dashboard = () => {
   const createInterview = async () => {
     try {
 
-      const res = await API.post("/interviews/create");
+      const res = await API.post("/interviews/create-room");
 
       if (res.data && res.data.roomId) {
         navigate(`/room/${res.data.roomId}`);
