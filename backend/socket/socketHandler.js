@@ -21,7 +21,7 @@ export const initializeSocketHandlers = (io) => {
 
         const room = io.sockets.adapter.rooms.get(roomId);
 
-        // limit room to 2 users
+        // limit to 2 participants
         if (room && room.size >= 2) {
           socket.emit("room-full");
           return;
@@ -35,16 +35,22 @@ export const initializeSocketHandlers = (io) => {
           roomId
         };
 
-        // Save candidate if needed
-        const interview = await Interview.findOne({ roomId });
+        // Save candidate if missing
+        try {
 
-        if (
-          interview &&
-          !interview.candidate &&
-          userId !== interview.interviewer?.toString()
-        ) {
-          interview.candidate = userId;
-          await interview.save();
+          const interview = await Interview.findOne({ roomId });
+
+          if (
+            interview &&
+            !interview.candidate &&
+            userId !== interview.interviewer?.toString()
+          ) {
+            interview.candidate = userId;
+            await interview.save();
+          }
+
+        } catch (err) {
+          console.log("Candidate save skipped");
         }
 
         // Get users in room
@@ -56,10 +62,10 @@ export const initializeSocketHandlers = (io) => {
           userName: s.data?.userName
         }));
 
-        // Send room users list
-        io.to(roomId).emit("room-joined", { users });
+        // Send only to the joining user
+        socket.emit("room-joined", { users });
 
-        // IMPORTANT: notify other users
+        // Notify others
         socket.to(roomId).emit("user-joined", {
           socketId: socket.id
         });
@@ -161,11 +167,11 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // WEBRTC OFFER
     // ==============================
-    socket.on("offer", ({ roomId, offer, from }) => {
+    socket.on("offer", ({ roomId, offer }) => {
 
       socket.to(roomId).emit("offer", {
         offer,
-        from
+        from: socket.id
       });
 
     });
@@ -174,11 +180,11 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // WEBRTC ANSWER
     // ==============================
-    socket.on("answer", ({ roomId, answer, from }) => {
+    socket.on("answer", ({ roomId, answer }) => {
 
       socket.to(roomId).emit("answer", {
         answer,
-        from
+        from: socket.id
       });
 
     });
@@ -187,11 +193,11 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // ICE CANDIDATE
     // ==============================
-    socket.on("ice-candidate", ({ roomId, candidate, from }) => {
+    socket.on("ice-candidate", ({ roomId, candidate }) => {
 
       socket.to(roomId).emit("ice-candidate", {
         candidate,
-        from
+        from: socket.id
       });
 
     });
@@ -232,7 +238,7 @@ export const initializeSocketHandlers = (io) => {
 
       console.log("User disconnected:", socket.id);
 
-      const { roomId } = socket.data || {};
+      const roomId = socket.data?.roomId;
 
       if (!roomId) return;
 
