@@ -21,27 +21,15 @@ const VideoCallMinimal = ({ roomId }) => {
 
       const pc = new RTCPeerConnection({
         iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          {
-            urls: [
-              "turn:global.relay.metered.ca:80",
-              "turn:global.relay.metered.ca:80?transport=tcp",
-              "turn:global.relay.metered.ca:443",
-              "turns:global.relay.metered.ca:443?transport=tcp"
-            ],
-            username: "51f5c130bbe99465ab82a39d",
-            credential: "UN1JcgSm3jrU2Aky"
-          }
+          { urls: "stun:stun.l.google.com:19302" }
         ]
       });
 
-      // FIXED REMOTE STREAM HANDLING
       pc.ontrack = (event) => {
 
         console.log("Remote stream received");
 
         const stream = event.streams[0];
-
         if (!stream) return;
 
         if (remoteVideoRef.current) {
@@ -70,7 +58,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
       return pc;
     };
-
 
     const startCall = async () => {
 
@@ -107,7 +94,7 @@ const VideoCallMinimal = ({ roomId }) => {
       } catch (err) {
 
         console.error("Media error:", err);
-        alert("Camera or microphone permission required");
+        alert("Camera/Mic permission required");
 
       }
 
@@ -115,33 +102,25 @@ const VideoCallMinimal = ({ roomId }) => {
 
     startCall();
 
-
-    // START CALL EVENT
     socket.on("start-call", async () => {
 
       const pc = pcRef.current;
       if (!pc) return;
 
-      try {
+      console.log("Creating offer");
 
-        const offer = await pc.createOffer();
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
 
-        await pc.setLocalDescription(offer);
-
-        socket.emit("offer", { roomId, offer });
-
-      } catch (err) {
-
-        console.error("Offer error:", err);
-
-      }
+      socket.emit("offer", { roomId, offer });
 
     });
-
 
     socket.on("offer", async ({ offer }) => {
 
       const pc = pcRef.current;
+
+      console.log("Received offer");
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
@@ -150,26 +129,26 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
       const answer = await pc.createAnswer();
-
       await pc.setLocalDescription(answer);
 
       socket.emit("answer", { roomId, answer });
 
     });
 
-
     socket.on("answer", async ({ answer }) => {
 
       const pc = pcRef.current;
+
+      console.log("Received answer");
 
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
     });
 
-
     socket.on("ice-candidate", async ({ candidate }) => {
 
       const pc = pcRef.current;
+      if (!pc) return;
 
       const ice = new RTCIceCandidate(candidate);
 
@@ -180,7 +159,6 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
     });
-
 
     return () => {
 
@@ -199,7 +177,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   }, [roomId]);
 
-
   const toggleCamera = () => {
 
     const track = localStreamRef.current?.getVideoTracks()[0];
@@ -209,7 +186,6 @@ const VideoCallMinimal = ({ roomId }) => {
     setCameraOn(track.enabled);
   };
 
-
   const toggleMic = () => {
 
     const track = localStreamRef.current?.getAudioTracks()[0];
@@ -218,7 +194,6 @@ const VideoCallMinimal = ({ roomId }) => {
     track.enabled = !track.enabled;
     setMicOn(track.enabled);
   };
-
 
   const toggleScreenShare = async () => {
 
@@ -250,7 +225,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
-
   const stopScreenShare = () => {
 
     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
@@ -268,7 +242,6 @@ const VideoCallMinimal = ({ roomId }) => {
     setScreenSharing(false);
 
   };
-
 
   return (
 
@@ -301,33 +274,22 @@ const VideoCallMinimal = ({ roomId }) => {
 
       <div className="flex justify-center gap-4 p-4 bg-gray-900">
 
-        <button
-          onClick={toggleCamera}
-          className="bg-gray-700 px-4 py-2 rounded text-white"
-        >
+        <button onClick={toggleCamera} className="bg-gray-700 px-4 py-2 rounded text-white">
           {cameraOn ? "Camera On" : "Camera Off"}
         </button>
 
-        <button
-          onClick={toggleMic}
-          className="bg-gray-700 px-4 py-2 rounded text-white"
-        >
+        <button onClick={toggleMic} className="bg-gray-700 px-4 py-2 rounded text-white">
           {micOn ? "Mic On" : "Mic Off"}
         </button>
 
-        <button
-          onClick={toggleScreenShare}
-          className="bg-blue-600 px-4 py-2 rounded text-white"
-        >
+        <button onClick={toggleScreenShare} className="bg-blue-600 px-4 py-2 rounded text-white">
           {screenSharing ? "Stop Share" : "Share Screen"}
         </button>
 
       </div>
 
     </div>
-
   );
-
 };
 
 export default VideoCallMinimal;
