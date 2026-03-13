@@ -11,9 +11,6 @@ const VideoCallMinimal = ({ roomId }) => {
   const remoteStreamRef = useRef(new MediaStream());
   const pendingCandidates = useRef([]);
 
-  const makingOffer = useRef(false);
-  const polite = useRef(false);
-
   const [remoteStream, setRemoteStream] = useState(null);
   const [cameraOn, setCameraOn] = useState(true);
   const [micOn, setMicOn] = useState(true);
@@ -41,7 +38,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
       pc.ontrack = (event) => {
 
-        console.log("Remote track received");
+        console.log("Remote stream received");
 
         event.streams[0].getTracks().forEach(track => {
           remoteStreamRef.current.addTrack(track);
@@ -52,6 +49,7 @@ const VideoCallMinimal = ({ roomId }) => {
         }
 
         setRemoteStream(remoteStreamRef.current);
+
       };
 
       pc.onicecandidate = (event) => {
@@ -71,12 +69,10 @@ const VideoCallMinimal = ({ roomId }) => {
         console.log("Connection:", pc.connectionState);
       };
 
-      pc.oniceconnectionstatechange = () => {
-        console.log("ICE:", pc.iceConnectionState);
-      };
-
       return pc;
+
     };
+
 
 
     const startCall = async () => {
@@ -114,7 +110,7 @@ const VideoCallMinimal = ({ roomId }) => {
       } catch (err) {
 
         console.error("Media error:", err);
-        alert("Camera/Microphone permission required");
+        alert("Camera or microphone permission required");
 
       }
 
@@ -123,59 +119,34 @@ const VideoCallMinimal = ({ roomId }) => {
     startCall();
 
 
-    socket.on("room-joined", ({ users }) => {
 
-      const other = users.find(u => u.socketId !== socket.id);
-
-      if (!other) return;
-
-      polite.current = socket.id > other.socketId;
-
-      if (!polite.current) createOffer();
-
-    });
-
-
-    socket.on("user-joined", () => {
-
-      if (!polite.current) createOffer();
-
-    });
-
-
-    const createOffer = async () => {
+    // SERVER TELLS BOTH USERS TO START CALL
+    socket.on("start-call", async () => {
 
       const pc = pcRef.current;
+
       if (!pc) return;
 
       try {
-
-        makingOffer.current = true;
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
 
         socket.emit("offer", { roomId, offer });
 
-      } finally {
+      } catch (err) {
 
-        makingOffer.current = false;
+        console.error("Offer error:", err);
 
       }
 
-    };
+    });
+
 
 
     socket.on("offer", async ({ offer }) => {
 
       const pc = pcRef.current;
-
-      const offerCollision =
-        makingOffer.current || pc.signalingState !== "stable";
-
-      const ignoreOffer = !polite.current && offerCollision;
-
-      if (ignoreOffer) return;
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
@@ -192,6 +163,7 @@ const VideoCallMinimal = ({ roomId }) => {
     });
 
 
+
     socket.on("answer", async ({ answer }) => {
 
       const pc = pcRef.current;
@@ -199,6 +171,7 @@ const VideoCallMinimal = ({ roomId }) => {
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
 
     });
+
 
 
     socket.on("ice-candidate", async ({ candidate }) => {
@@ -216,10 +189,10 @@ const VideoCallMinimal = ({ roomId }) => {
     });
 
 
+
     return () => {
 
-      socket.off("room-joined");
-      socket.off("user-joined");
+      socket.off("start-call");
       socket.off("offer");
       socket.off("answer");
       socket.off("ice-candidate");
@@ -235,30 +208,29 @@ const VideoCallMinimal = ({ roomId }) => {
   }, [roomId]);
 
 
+
   const toggleCamera = () => {
 
     const track = localStreamRef.current?.getVideoTracks()[0];
-
     if (!track) return;
 
     track.enabled = !track.enabled;
-
     setCameraOn(track.enabled);
 
   };
 
 
+
   const toggleMic = () => {
 
     const track = localStreamRef.current?.getAudioTracks()[0];
-
     if (!track) return;
 
     track.enabled = !track.enabled;
-
     setMicOn(track.enabled);
 
   };
+
 
 
   const toggleScreenShare = async () => {
@@ -292,6 +264,7 @@ const VideoCallMinimal = ({ roomId }) => {
   };
 
 
+
   const stopScreenShare = () => {
 
     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
@@ -309,6 +282,7 @@ const VideoCallMinimal = ({ roomId }) => {
     setScreenSharing(false);
 
   };
+
 
 
   return (
