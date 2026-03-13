@@ -48,24 +48,17 @@ const VideoCallMinimal = ({ roomId }) => {
         }
 
         setRemoteStream(remoteStreamRef.current);
-
       };
 
       pc.onicecandidate = (event) => {
 
         if (event.candidate) {
-
           socket.emit("ice-candidate", {
             roomId,
             candidate: event.candidate
           });
-
         }
 
-      };
-
-      pc.onconnectionstatechange = () => {
-        console.log("Connection:", pc.connectionState);
       };
 
       return pc;
@@ -98,9 +91,7 @@ const VideoCallMinimal = ({ roomId }) => {
         socket.emit("join-room", { roomId });
 
       } catch (err) {
-
         console.error("Media error:", err);
-
       }
 
     };
@@ -136,18 +127,12 @@ const VideoCallMinimal = ({ roomId }) => {
         makingOffer.current = true;
 
         const offer = await pc.createOffer();
-
         await pc.setLocalDescription(offer);
 
-        socket.emit("offer", {
-          roomId,
-          offer
-        });
+        socket.emit("offer", { roomId, offer });
 
       } finally {
-
         makingOffer.current = false;
-
       }
 
     };
@@ -170,7 +155,6 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
       const answer = await pc.createAnswer();
-
       await pc.setLocalDescription(answer);
 
       socket.emit("answer", { roomId, answer });
@@ -188,7 +172,6 @@ const VideoCallMinimal = ({ roomId }) => {
     socket.on("ice-candidate", async ({ candidate }) => {
 
       const pc = pcRef.current;
-
       const ice = new RTCIceCandidate(candidate);
 
       if (pc.remoteDescription) {
@@ -214,7 +197,6 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
       remoteStreamRef.current = new MediaStream();
-
     };
 
   }, [roomId]);
@@ -239,12 +221,61 @@ const VideoCallMinimal = ({ roomId }) => {
 
   };
 
+  const toggleScreenShare = async () => {
+
+    if (!screenSharing) {
+
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true
+      });
+
+      const screenTrack = screenStream.getVideoTracks()[0];
+
+      const sender = pcRef.current
+        ?.getSenders()
+        .find(s => s.track?.kind === "video");
+
+      if (sender) sender.replaceTrack(screenTrack);
+
+      localVideoRef.current.srcObject = screenStream;
+
+      screenTrack.onended = stopScreenShare;
+
+      setScreenSharing(true);
+
+    } else {
+
+      stopScreenShare();
+
+    }
+
+  };
+
+  const stopScreenShare = () => {
+
+    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+
+    const sender = pcRef.current
+      ?.getSenders()
+      .find(s => s.track?.kind === "video");
+
+    if (sender && videoTrack) {
+      sender.replaceTrack(videoTrack);
+    }
+
+    localVideoRef.current.srcObject = localStreamRef.current;
+
+    setScreenSharing(false);
+
+  };
+
   return (
 
     <div className="bg-black flex flex-col h-full">
 
       <div className="flex-1 relative">
 
+        {/* Remote video */}
         <video
           ref={remoteVideoRef}
           autoPlay
@@ -258,17 +289,18 @@ const VideoCallMinimal = ({ roomId }) => {
           </div>
         )}
 
+        {/* Local camera */}
         <video
           ref={localVideoRef}
           autoPlay
           muted
           playsInline
-          className="absolute bottom-5 right-5 w-64 rounded border"
+          className="absolute bottom-5 right-5 w-56 rounded-lg border-2 border-white shadow-lg"
         />
 
       </div>
 
-      <div className="flex justify-center gap-4 p-3 bg-gray-900">
+      <div className="flex justify-center gap-4 p-4 bg-gray-900">
 
         <button
           onClick={toggleCamera}
@@ -284,10 +316,16 @@ const VideoCallMinimal = ({ roomId }) => {
           {micOn ? "Mic On" : "Mic Off"}
         </button>
 
+        <button
+          onClick={toggleScreenShare}
+          className="bg-blue-600 px-4 py-2 rounded text-white"
+        >
+          {screenSharing ? "Stop Share" : "Share Screen"}
+        </button>
+
       </div>
 
     </div>
-
   );
 
 };
