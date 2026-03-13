@@ -36,7 +36,7 @@ const VideoCallMinimal = ({ roomId }) => {
         ]
       });
 
-      // RECEIVE REMOTE TRACKS
+      // Remote stream handler
       pc.ontrack = (event) => {
 
         console.log("Track received:", event.track.kind);
@@ -51,7 +51,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
       };
 
-      // SEND ICE
+      // ICE candidates
       pc.onicecandidate = (event) => {
 
         if (event.candidate) {
@@ -70,7 +70,6 @@ const VideoCallMinimal = ({ roomId }) => {
       };
 
       return pc;
-
     };
 
     const startCall = async () => {
@@ -109,7 +108,23 @@ const VideoCallMinimal = ({ roomId }) => {
 
     startCall();
 
-    // SECOND USER CREATES OFFER
+    // When room info arrives
+    socket.on("room-joined", async ({ users }) => {
+
+      if (users.length === 2) {
+
+        const pc = pcRef.current;
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        socket.emit("offer", { roomId, offer });
+
+      }
+
+    });
+
+    // When second user joins
     socket.on("user-joined", async () => {
 
       const pc = pcRef.current;
@@ -117,14 +132,11 @@ const VideoCallMinimal = ({ roomId }) => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      socket.emit("offer", {
-        roomId,
-        offer
-      });
+      socket.emit("offer", { roomId, offer });
 
     });
 
-    // RECEIVE OFFER
+    // Receive offer
     socket.on("offer", async ({ offer }) => {
 
       const pc = pcRef.current;
@@ -138,14 +150,11 @@ const VideoCallMinimal = ({ roomId }) => {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      socket.emit("answer", {
-        roomId,
-        answer
-      });
+      socket.emit("answer", { roomId, answer });
 
     });
 
-    // RECEIVE ANSWER
+    // Receive answer
     socket.on("answer", async ({ answer }) => {
 
       const pc = pcRef.current;
@@ -154,7 +163,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // RECEIVE ICE
+    // Receive ICE
     socket.on("ice-candidate", async ({ candidate }) => {
 
       const pc = pcRef.current;
@@ -170,6 +179,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     return () => {
 
+      socket.off("room-joined");
       socket.off("user-joined");
       socket.off("offer");
       socket.off("answer");
@@ -211,10 +221,9 @@ const VideoCallMinimal = ({ roomId }) => {
 
     if (!screenSharing) {
 
-      const screenStream =
-        await navigator.mediaDevices.getDisplayMedia({
-          video: true
-        });
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true
+      });
 
       const screenTrack = screenStream.getVideoTracks()[0];
 
@@ -227,6 +236,7 @@ const VideoCallMinimal = ({ roomId }) => {
       localVideoRef.current.srcObject = screenStream;
 
       screenTrack.onended = stopScreenShare;
+
       setScreenSharing(true);
 
     } else {
@@ -239,8 +249,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const stopScreenShare = () => {
 
-    const videoTrack =
-      localStreamRef.current?.getVideoTracks()[0];
+    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
 
     const sender = pcRef.current
       ?.getSenders()
@@ -250,8 +259,7 @@ const VideoCallMinimal = ({ roomId }) => {
       sender.replaceTrack(videoTrack);
     }
 
-    localVideoRef.current.srcObject =
-      localStreamRef.current;
+    localVideoRef.current.srcObject = localStreamRef.current;
 
     setScreenSharing(false);
 
