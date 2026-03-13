@@ -35,7 +35,7 @@ export const initializeSocketHandlers = (io) => {
           roomId
         };
 
-        // save candidate
+        // Save candidate if needed
         const interview = await Interview.findOne({ roomId });
 
         if (
@@ -47,7 +47,7 @@ export const initializeSocketHandlers = (io) => {
           await interview.save();
         }
 
-        // get all users in room
+        // Get users in room
         const clients = await io.in(roomId).fetchSockets();
 
         const users = clients.map(s => ({
@@ -56,8 +56,13 @@ export const initializeSocketHandlers = (io) => {
           userName: s.data?.userName
         }));
 
-        // send room users to everyone
+        // Send room users list
         io.to(roomId).emit("room-joined", { users });
+
+        // IMPORTANT: notify other users
+        socket.to(roomId).emit("user-joined", {
+          socketId: socket.id
+        });
 
         console.log(`User ${socket.id} joined room ${roomId}`);
 
@@ -156,11 +161,11 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // WEBRTC OFFER
     // ==============================
-    socket.on("offer", ({ roomId, offer }) => {
+    socket.on("offer", ({ roomId, offer, from }) => {
 
       socket.to(roomId).emit("offer", {
         offer,
-        from: socket.id
+        from
       });
 
     });
@@ -169,11 +174,11 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // WEBRTC ANSWER
     // ==============================
-    socket.on("answer", ({ roomId, answer }) => {
+    socket.on("answer", ({ roomId, answer, from }) => {
 
       socket.to(roomId).emit("answer", {
         answer,
-        from: socket.id
+        from
       });
 
     });
@@ -182,11 +187,11 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     // ICE CANDIDATE
     // ==============================
-    socket.on("ice-candidate", ({ roomId, candidate }) => {
+    socket.on("ice-candidate", ({ roomId, candidate, from }) => {
 
       socket.to(roomId).emit("ice-candidate", {
         candidate,
-        from: socket.id
+        from
       });
 
     });
