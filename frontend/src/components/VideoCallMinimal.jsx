@@ -8,7 +8,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
-  const remoteStreamRef = useRef(new MediaStream());
   const pendingCandidates = useRef([]);
 
   const makingOffer = useRef(false);
@@ -39,29 +38,47 @@ const VideoCallMinimal = ({ roomId }) => {
         ]
       });
 
+      // Remote stream
       pc.ontrack = (event) => {
 
-        remoteStreamRef.current.addTrack(event.track);
+        const stream = event.streams[0];
+
+        if (!stream) return;
+
+        console.log("Remote stream received");
 
         if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStreamRef.current;
+          remoteVideoRef.current.srcObject = stream;
         }
 
-        setRemoteStream(remoteStreamRef.current);
+        setRemoteStream(stream);
+
       };
 
+      // ICE candidate
       pc.onicecandidate = (event) => {
 
         if (event.candidate) {
+
           socket.emit("ice-candidate", {
             roomId,
             candidate: event.candidate
           });
+
         }
 
       };
 
+      pc.onconnectionstatechange = () => {
+        console.log("Connection:", pc.connectionState);
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log("ICE:", pc.iceConnectionState);
+      };
+
       return pc;
+
     };
 
     const startCall = async () => {
@@ -91,7 +108,9 @@ const VideoCallMinimal = ({ roomId }) => {
         socket.emit("join-room", { roomId });
 
       } catch (err) {
+
         console.error("Media error:", err);
+
       }
 
     };
@@ -127,12 +146,15 @@ const VideoCallMinimal = ({ roomId }) => {
         makingOffer.current = true;
 
         const offer = await pc.createOffer();
+
         await pc.setLocalDescription(offer);
 
         socket.emit("offer", { roomId, offer });
 
       } finally {
+
         makingOffer.current = false;
+
       }
 
     };
@@ -155,6 +177,7 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
       const answer = await pc.createAnswer();
+
       await pc.setLocalDescription(answer);
 
       socket.emit("answer", { roomId, answer });
@@ -172,6 +195,7 @@ const VideoCallMinimal = ({ roomId }) => {
     socket.on("ice-candidate", async ({ candidate }) => {
 
       const pc = pcRef.current;
+
       const ice = new RTCIceCandidate(candidate);
 
       if (pc.remoteDescription) {
@@ -196,7 +220,6 @@ const VideoCallMinimal = ({ roomId }) => {
         localStreamRef.current.getTracks().forEach(track => track.stop());
       }
 
-      remoteStreamRef.current = new MediaStream();
     };
 
   }, [roomId]);
@@ -204,9 +227,11 @@ const VideoCallMinimal = ({ roomId }) => {
   const toggleCamera = () => {
 
     const track = localStreamRef.current?.getVideoTracks()[0];
+
     if (!track) return;
 
     track.enabled = !track.enabled;
+
     setCameraOn(track.enabled);
 
   };
@@ -214,9 +239,11 @@ const VideoCallMinimal = ({ roomId }) => {
   const toggleMic = () => {
 
     const track = localStreamRef.current?.getAudioTracks()[0];
+
     if (!track) return;
 
     track.enabled = !track.enabled;
+
     setMicOn(track.enabled);
 
   };
@@ -275,7 +302,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
       <div className="flex-1 relative">
 
-        {/* Remote video */}
         <video
           ref={remoteVideoRef}
           autoPlay
@@ -289,7 +315,6 @@ const VideoCallMinimal = ({ roomId }) => {
           </div>
         )}
 
-        {/* Local camera */}
         <video
           ref={localVideoRef}
           autoPlay
@@ -326,6 +351,7 @@ const VideoCallMinimal = ({ roomId }) => {
       </div>
 
     </div>
+
   );
 
 };
