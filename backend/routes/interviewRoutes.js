@@ -5,7 +5,6 @@ import bcrypt from "bcryptjs";
 
 import Interview from "../models/Interview.js";
 import User from "../models/User.js";
-import Chat from "../models/Chat.js";
 
 import authMiddleware from "../middleware/authMiddleware.js";
 import { validateCodeUpdate, validateRating } from "../middleware/validationMiddleware.js";
@@ -60,7 +59,7 @@ router.post("/create-room", authMiddleware, async (req, res) => {
 
     let candidateUser = await User.findOne({ email: candidateEmail });
 
-    // Auto-create candidate if not exists
+    // Auto create candidate
     if (!candidateUser) {
 
       const hashedPassword = await bcrypt.hash("tempPassword123", 10);
@@ -163,9 +162,7 @@ router.get("/room/:roomId", authMiddleware, async (req, res) => {
 
     if (isMongoConnected()) {
 
-      interview = await Interview.findOne({
-        roomId: req.params.roomId
-      })
+      interview = await Interview.findOne({ roomId: req.params.roomId })
         .populate("interviewer", "name email")
         .populate("candidate", "name email");
 
@@ -307,17 +304,7 @@ router.post("/:roomId/rate", authMiddleware, validateRating, async (req, res) =>
         endTime: new Date()
       },
       { new: true }
-    )
-      .populate("interviewer", "name email")
-      .populate("candidate", "name email");
-
-    if (!interview) {
-
-      return res.status(404).json({
-        message: "Interview not found"
-      });
-
-    }
+    );
 
     res.json(interview);
 
@@ -350,14 +337,6 @@ router.post("/:roomId/end", authMiddleware, async (req, res) => {
       { new: true }
     );
 
-    if (!interview) {
-
-      return res.status(404).json({
-        message: "Interview not found"
-      });
-
-    }
-
     res.json({
       message: "Interview ended successfully"
     });
@@ -378,21 +357,21 @@ router.post("/:roomId/end", authMiddleware, async (req, res) => {
 // =========================
 // Delete Interview
 // =========================
-router.delete("/:roomId", authMiddleware, async (req, res) => {
+router.delete("/:id", authMiddleware, async (req, res) => {
 
   try {
 
-    const { roomId } = req.params;
+    const { id } = req.params;
 
     let deletedInterview;
 
     if (isMongoConnected()) {
 
-      deletedInterview = await Interview.findOneAndDelete({ roomId });
+      deletedInterview = await Interview.findByIdAndDelete(id);
 
     } else {
 
-      deletedInterview = memoryStore.deleteInterview(roomId);
+      deletedInterview = memoryStore.deleteInterview(id);
 
     }
 
@@ -414,6 +393,50 @@ router.delete("/:roomId", authMiddleware, async (req, res) => {
 
     res.status(500).json({
       message: "Failed to delete interview"
+    });
+
+  }
+
+});
+
+
+// =========================
+// Complete Interview
+// =========================
+router.patch("/:id/complete", authMiddleware, async (req, res) => {
+
+  try {
+
+    const { id } = req.params;
+
+    const interview = await Interview.findByIdAndUpdate(
+      id,
+      {
+        status: "completed",
+        endTime: new Date()
+      },
+      { new: true }
+    );
+
+    if (!interview) {
+
+      return res.status(404).json({
+        message: "Interview not found"
+      });
+
+    }
+
+    res.json({
+      message: "Interview marked completed",
+      interview
+    });
+
+  } catch (err) {
+
+    console.error("Complete interview error:", err);
+
+    res.status(500).json({
+      message: "Failed to complete interview"
     });
 
   }
