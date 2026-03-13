@@ -8,6 +8,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
+  const pendingCandidates = useRef([]);
 
   const [remoteStream, setRemoteStream] = useState(null);
   const [cameraOn, setCameraOn] = useState(true);
@@ -28,8 +29,8 @@ const VideoCallMinimal = ({ roomId }) => {
               "turn:global.relay.metered.ca:443",
               "turns:global.relay.metered.ca:443?transport=tcp"
             ],
-            username: "openai",
-            credential: "openai"
+            username: "51f5c130bbe99465ab82a39d",
+            credential: "UN1JcgSm3jrU2Aky"
           }
         ]
       });
@@ -62,11 +63,7 @@ const VideoCallMinimal = ({ roomId }) => {
       };
 
       pc.onconnectionstatechange = () => {
-        console.log("Connection state:", pc.connectionState);
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        console.log("ICE state:", pc.iceConnectionState);
+        console.log("Connection:", pc.connectionState);
       };
 
       return pc;
@@ -131,6 +128,10 @@ const VideoCallMinimal = ({ roomId }) => {
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
+      while (pendingCandidates.current.length) {
+        await pc.addIceCandidate(pendingCandidates.current.shift());
+      }
+
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
@@ -153,18 +154,13 @@ const VideoCallMinimal = ({ roomId }) => {
     // RECEIVE ICE
     socket.on("ice-candidate", async ({ candidate }) => {
 
-      try {
+      const pc = pcRef.current;
+      const ice = new RTCIceCandidate(candidate);
 
-        const pc = pcRef.current;
-
-        if (candidate) {
-          await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        }
-
-      } catch (err) {
-
-        console.error("ICE error:", err);
-
+      if (pc.remoteDescription) {
+        await pc.addIceCandidate(ice);
+      } else {
+        pendingCandidates.current.push(ice);
       }
 
     });
@@ -213,7 +209,9 @@ const VideoCallMinimal = ({ roomId }) => {
     if (!screenSharing) {
 
       const screenStream =
-        await navigator.mediaDevices.getDisplayMedia({ video: true });
+        await navigator.mediaDevices.getDisplayMedia({
+          video: true
+        });
 
       const screenTrack = screenStream.getVideoTracks()[0];
 
@@ -226,7 +224,6 @@ const VideoCallMinimal = ({ roomId }) => {
       localVideoRef.current.srcObject = screenStream;
 
       screenTrack.onended = stopScreenShare;
-
       setScreenSharing(true);
 
     } else {
@@ -239,7 +236,8 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const stopScreenShare = () => {
 
-    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+    const videoTrack =
+      localStreamRef.current?.getVideoTracks()[0];
 
     const sender = pcRef.current
       ?.getSenders()
@@ -249,7 +247,8 @@ const VideoCallMinimal = ({ roomId }) => {
       sender.replaceTrack(videoTrack);
     }
 
-    localVideoRef.current.srcObject = localStreamRef.current;
+    localVideoRef.current.srcObject =
+      localStreamRef.current;
 
     setScreenSharing(false);
 
