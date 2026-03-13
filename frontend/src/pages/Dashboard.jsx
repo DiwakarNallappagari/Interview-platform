@@ -22,50 +22,72 @@ const Dashboard = () => {
   };
 
   const createInterview = async () => {
+
     try {
 
-      const res = await API.post("/interviews/create-room");
+      const candidateEmail = prompt("Enter candidate email");
 
-      if (res.data && res.data.roomId) {
+      if (!candidateEmail) {
+        alert("Candidate email required");
+        return;
+      }
+
+      const res = await API.post("/interviews/create-room", {
+        candidateEmail
+      });
+
+      if (res.data?.roomId) {
         navigate(`/room/${res.data.roomId}`);
       }
 
     } catch (err) {
 
-      console.log("Create interview API failed, using fallback");
+      console.log("Create interview API failed:", err);
 
-      const roomId = Math.random().toString(36).substring(2, 10);
-      navigate(`/room/${roomId}`);
+      alert("Failed to create interview room");
 
     }
+
   };
 
   const joinRoom = (roomId) => {
     navigate(`/room/${roomId}`);
   };
 
-  const deleteRoom = async (id) => {
+  const deleteRoom = async (roomId) => {
+
     try {
 
-      await API.delete(`/interviews/${id}`);
+      await API.delete(`/interviews/${roomId}`);
 
-      setInterviews(prev => prev.filter(i => i._id !== id));
+      setInterviews(prev =>
+        prev.filter(i => i.roomId !== roomId)
+      );
 
     } catch (err) {
+
       console.log("Delete failed:", err);
+
     }
+
   };
 
-  const completeRoom = async (id) => {
+  const completeRoom = async (roomId) => {
+
     try {
 
-      await API.patch(`/interviews/${id}/complete`);
+      await API.post(`/interviews/${roomId}/end`);
 
       alert("Interview marked as completed");
 
+      fetchInterviews();
+
     } catch (err) {
+
       console.log("Complete failed:", err);
+
     }
+
   };
 
   return (
@@ -94,7 +116,11 @@ const Dashboard = () => {
           <p>No interviews yet</p>
         ) : (
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))", gap: "20px" }}>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))",
+            gap: "20px"
+          }}>
 
             {interviews.map((interview) => (
 
@@ -128,7 +154,7 @@ const Dashboard = () => {
                   </button>
 
                   <button
-                    onClick={() => deleteRoom(interview._id)}
+                    onClick={() => deleteRoom(interview.roomId)}
                     style={{
                       background: "#ef4444",
                       color: "white",
@@ -142,7 +168,7 @@ const Dashboard = () => {
                   </button>
 
                   <button
-                    onClick={() => completeRoom(interview._id)}
+                    onClick={() => completeRoom(interview.roomId)}
                     style={{
                       background: "#3b82f6",
                       color: "white",
@@ -168,6 +194,7 @@ const Dashboard = () => {
       </div>
     </>
   );
+
 };
 
 export default Dashboard;
