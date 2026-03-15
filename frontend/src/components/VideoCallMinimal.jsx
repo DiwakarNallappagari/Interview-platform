@@ -23,12 +23,13 @@ const VideoCallMinimal = ({ roomId }) => {
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
       });
 
-      // Receive remote stream
+      // Remote stream handler
       pc.ontrack = (event) => {
 
         console.log("Remote track received");
 
         const stream = event.streams[0];
+
         if (!stream) return;
 
         if (remoteVideoRef.current) {
@@ -66,7 +67,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
         const user = JSON.parse(localStorage.getItem("user"));
 
-        // Get camera + mic
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true
@@ -81,7 +81,7 @@ const VideoCallMinimal = ({ roomId }) => {
         const pc = createPeerConnection();
         pcRef.current = pc;
 
-        // Add tracks
+        // Add tracks to peer connection
         stream.getTracks().forEach(track => {
           pc.addTrack(track, stream);
         });
@@ -103,7 +103,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     startCall();
 
-    // START CALL (first user creates offer)
+    // First user creates offer
     socket.on("start-call", async () => {
 
       const pc = pcRef.current;
@@ -118,7 +118,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // RECEIVE OFFER
+    // Receive offer
     socket.on("offer", async ({ offer }) => {
 
       const pc = pcRef.current;
@@ -140,7 +140,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // RECEIVE ANSWER
+    // Receive answer
     socket.on("answer", async ({ answer }) => {
 
       const pc = pcRef.current;
@@ -152,7 +152,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // RECEIVE ICE CANDIDATES
+    // Receive ICE candidates
     socket.on("ice-candidate", async ({ candidate }) => {
 
       const pc = pcRef.current;
@@ -160,7 +160,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
       const ice = new RTCIceCandidate(candidate);
 
-      if (pc.remoteDescription) {
+      if (pc.remoteDescription && pc.remoteDescription.type) {
         await pc.addIceCandidate(ice);
       } else {
         pendingCandidates.current.push(ice);
@@ -225,7 +225,9 @@ const VideoCallMinimal = ({ roomId }) => {
 
       if (sender) sender.replaceTrack(screenTrack);
 
-      localVideoRef.current.srcObject = screenStream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = screenStream;
+      }
 
       screenTrack.onended = stopScreenShare;
 
