@@ -20,30 +20,15 @@ const VideoCallMinimal = ({ roomId }) => {
     const createPeerConnection = () => {
 
       const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          {
-            urls: "stun:openrelay.metered.ca:80"
-          },
-          {
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-          },
-          {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-          }
-        ]
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
       });
 
+      // Receive remote stream
       pc.ontrack = (event) => {
 
         console.log("Remote track received");
 
         const stream = event.streams[0];
-
         if (!stream) return;
 
         if (remoteVideoRef.current) {
@@ -51,9 +36,9 @@ const VideoCallMinimal = ({ roomId }) => {
         }
 
         setRemoteStream(stream);
-
       };
 
+      // Send ICE candidates
       pc.onicecandidate = (event) => {
 
         if (event.candidate) {
@@ -64,19 +49,13 @@ const VideoCallMinimal = ({ roomId }) => {
           });
 
         }
-
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        console.log("ICE STATE:", pc.iceConnectionState);
       };
 
       pc.onconnectionstatechange = () => {
-        console.log("CONNECTION STATE:", pc.connectionState);
+        console.log("Connection state:", pc.connectionState);
       };
 
       return pc;
-
     };
 
     const startCall = async () => {
@@ -87,6 +66,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
         const user = JSON.parse(localStorage.getItem("user"));
 
+        // Get camera + mic
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: true
@@ -101,6 +81,7 @@ const VideoCallMinimal = ({ roomId }) => {
         const pc = createPeerConnection();
         pcRef.current = pc;
 
+        // Add tracks
         stream.getTracks().forEach(track => {
           pc.addTrack(track, stream);
         });
@@ -114,7 +95,7 @@ const VideoCallMinimal = ({ roomId }) => {
       } catch (err) {
 
         console.error("Media error:", err);
-        alert("Camera or microphone permission required");
+        alert("Camera/Mic permission required");
 
       }
 
@@ -122,52 +103,47 @@ const VideoCallMinimal = ({ roomId }) => {
 
     startCall();
 
+    // START CALL (first user creates offer)
     socket.on("start-call", async () => {
 
       const pc = pcRef.current;
-
       if (!pc) return;
 
       console.log("Creating offer");
 
       const offer = await pc.createOffer();
-
       await pc.setLocalDescription(offer);
 
       socket.emit("offer", { roomId, offer });
 
     });
 
+    // RECEIVE OFFER
     socket.on("offer", async ({ offer }) => {
 
       const pc = pcRef.current;
-
       if (!pc) return;
 
       console.log("Received offer");
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
+      // Add buffered ICE candidates
       while (pendingCandidates.current.length) {
-
-        const candidate = pendingCandidates.current.shift();
-
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-
+        await pc.addIceCandidate(pendingCandidates.current.shift());
       }
 
       const answer = await pc.createAnswer();
-
       await pc.setLocalDescription(answer);
 
       socket.emit("answer", { roomId, answer });
 
     });
 
+    // RECEIVE ANSWER
     socket.on("answer", async ({ answer }) => {
 
       const pc = pcRef.current;
-
       if (!pc) return;
 
       console.log("Received answer");
@@ -176,22 +152,18 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
+    // RECEIVE ICE CANDIDATES
     socket.on("ice-candidate", async ({ candidate }) => {
 
       const pc = pcRef.current;
-
       if (!pc) return;
 
       const ice = new RTCIceCandidate(candidate);
 
       if (pc.remoteDescription) {
-
         await pc.addIceCandidate(ice);
-
       } else {
-
-        pendingCandidates.current.push(candidate);
-
+        pendingCandidates.current.push(ice);
       }
 
     });
@@ -203,46 +175,40 @@ const VideoCallMinimal = ({ roomId }) => {
       socket.off("answer");
       socket.off("ice-candidate");
 
-      if (pcRef.current) pcRef.current.close();
+      if (pcRef.current) {
+        pcRef.current.close();
+        pcRef.current = null;
+      }
 
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(track => track.stop());
-      }
-
-      const remoteVideo = remoteVideoRef.current;
-
-      if (remoteVideo) {
-        remoteVideo.srcObject = null;
       }
 
     };
 
   }, [roomId]);
 
+  // Toggle Camera
   const toggleCamera = () => {
 
     const track = localStreamRef.current?.getVideoTracks()[0];
-
     if (!track) return;
 
     track.enabled = !track.enabled;
-
     setCameraOn(track.enabled);
-
   };
 
+  // Toggle Mic
   const toggleMic = () => {
 
     const track = localStreamRef.current?.getAudioTracks()[0];
-
     if (!track) return;
 
     track.enabled = !track.enabled;
-
     setMicOn(track.enabled);
-
   };
 
+  // Screen Share
   const toggleScreenShare = async () => {
 
     if (!screenSharing) {
@@ -285,10 +251,11 @@ const VideoCallMinimal = ({ roomId }) => {
       sender.replaceTrack(videoTrack);
     }
 
-    localVideoRef.current.srcObject = localStreamRef.current;
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
 
     setScreenSharing(false);
-
   };
 
   return (
@@ -322,24 +289,31 @@ const VideoCallMinimal = ({ roomId }) => {
 
       <div className="flex justify-center gap-4 p-4 bg-gray-900">
 
-        <button onClick={toggleCamera} className="bg-gray-700 px-4 py-2 rounded text-white">
+        <button
+          onClick={toggleCamera}
+          className="bg-gray-700 px-4 py-2 rounded text-white"
+        >
           {cameraOn ? "Camera On" : "Camera Off"}
         </button>
 
-        <button onClick={toggleMic} className="bg-gray-700 px-4 py-2 rounded text-white">
+        <button
+          onClick={toggleMic}
+          className="bg-gray-700 px-4 py-2 rounded text-white"
+        >
           {micOn ? "Mic On" : "Mic Off"}
         </button>
 
-        <button onClick={toggleScreenShare} className="bg-blue-600 px-4 py-2 rounded text-white">
+        <button
+          onClick={toggleScreenShare}
+          className="bg-blue-600 px-4 py-2 rounded text-white"
+        >
           {screenSharing ? "Stop Share" : "Share Screen"}
         </button>
 
       </div>
 
     </div>
-
   );
-
 };
 
 export default VideoCallMinimal;
