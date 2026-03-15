@@ -8,6 +8,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(new MediaStream());
   const pendingCandidates = useRef([]);
 
   const [remoteStream, setRemoteStream] = useState(null);
@@ -37,16 +38,18 @@ const VideoCallMinimal = ({ roomId }) => {
       });
 
       pc.ontrack = (event) => {
+
         console.log("Remote track received");
 
-        const stream = event.streams[0];
-        if (!stream) return;
+        event.streams[0].getTracks().forEach(track => {
+          remoteStreamRef.current.addTrack(track);
+        });
 
         if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = stream;
+          remoteVideoRef.current.srcObject = remoteStreamRef.current;
         }
 
-        setRemoteStream(stream);
+        setRemoteStream(remoteStreamRef.current);
       };
 
       pc.onicecandidate = (event) => {
@@ -63,12 +66,14 @@ const VideoCallMinimal = ({ roomId }) => {
       };
 
       pc.onconnectionstatechange = () => {
+
         console.log("Connection state:", pc.connectionState);
 
         if (pc.connectionState === "failed") {
-          console.log("Reconnecting...");
+          console.log("Restarting ICE...");
           pc.restartIce();
         }
+
       };
 
       pc.oniceconnectionstatechange = () => {
@@ -173,7 +178,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
       const ice = new RTCIceCandidate(candidate);
 
-      if (pc.remoteDescription && pc.remoteDescription.type) {
+      if (pc.remoteDescription) {
         await pc.addIceCandidate(ice);
       } else {
         pendingCandidates.current.push(ice);
