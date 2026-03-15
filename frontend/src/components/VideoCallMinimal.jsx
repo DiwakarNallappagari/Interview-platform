@@ -20,16 +20,26 @@ const VideoCallMinimal = ({ roomId }) => {
     const createPeerConnection = () => {
 
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+          {
+            urls: "turn:openrelay.metered.ca:80",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          },
+          {
+            urls: "turn:openrelay.metered.ca:443",
+            username: "openrelayproject",
+            credential: "openrelayproject"
+          }
+        ]
       });
 
-      // Remote stream handler
       pc.ontrack = (event) => {
-
         console.log("Remote track received");
 
         const stream = event.streams[0];
-
         if (!stream) return;
 
         if (remoteVideoRef.current) {
@@ -39,7 +49,6 @@ const VideoCallMinimal = ({ roomId }) => {
         setRemoteStream(stream);
       };
 
-      // Send ICE candidates
       pc.onicecandidate = (event) => {
 
         if (event.candidate) {
@@ -50,10 +59,20 @@ const VideoCallMinimal = ({ roomId }) => {
           });
 
         }
+
       };
 
       pc.onconnectionstatechange = () => {
         console.log("Connection state:", pc.connectionState);
+
+        if (pc.connectionState === "failed") {
+          console.log("Reconnecting...");
+          pc.restartIce();
+        }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log("ICE state:", pc.iceConnectionState);
       };
 
       return pc;
@@ -81,7 +100,6 @@ const VideoCallMinimal = ({ roomId }) => {
         const pc = createPeerConnection();
         pcRef.current = pc;
 
-        // Add tracks to peer connection
         stream.getTracks().forEach(track => {
           pc.addTrack(track, stream);
         });
@@ -103,7 +121,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
     startCall();
 
-    // First user creates offer
     socket.on("start-call", async () => {
 
       const pc = pcRef.current;
@@ -118,7 +135,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // Receive offer
     socket.on("offer", async ({ offer }) => {
 
       const pc = pcRef.current;
@@ -128,7 +144,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
 
-      // Add buffered ICE candidates
       while (pendingCandidates.current.length) {
         await pc.addIceCandidate(pendingCandidates.current.shift());
       }
@@ -140,7 +155,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // Receive answer
     socket.on("answer", async ({ answer }) => {
 
       const pc = pcRef.current;
@@ -152,7 +166,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
     });
 
-    // Receive ICE candidates
     socket.on("ice-candidate", async ({ candidate }) => {
 
       const pc = pcRef.current;
@@ -188,7 +201,6 @@ const VideoCallMinimal = ({ roomId }) => {
 
   }, [roomId]);
 
-  // Toggle Camera
   const toggleCamera = () => {
 
     const track = localStreamRef.current?.getVideoTracks()[0];
@@ -198,7 +210,6 @@ const VideoCallMinimal = ({ roomId }) => {
     setCameraOn(track.enabled);
   };
 
-  // Toggle Mic
   const toggleMic = () => {
 
     const track = localStreamRef.current?.getAudioTracks()[0];
@@ -208,7 +219,6 @@ const VideoCallMinimal = ({ roomId }) => {
     setMicOn(track.enabled);
   };
 
-  // Screen Share
   const toggleScreenShare = async () => {
 
     if (!screenSharing) {
