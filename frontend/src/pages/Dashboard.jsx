@@ -13,84 +13,95 @@ const Dashboard = () => {
   }, []);
 
   const fetchInterviews = async () => {
+
     try {
+
       const res = await API.get("/interviews");
-      setInterviews(res.data || []);
+
+      if (res.data) {
+        setInterviews(res.data);
+      }
+
     } catch (err) {
+
       console.log("Fetch interviews error:", err);
+
     }
+
   };
 
   const createInterview = async () => {
 
     try {
 
-      const candidateEmail = prompt("Enter candidate email");
+      const res = await API.post("/interviews/create-room");
 
-      if (!candidateEmail) {
-        alert("Candidate email required");
+      const roomId = res?.data?.roomId;
+
+      if (!roomId) {
+        alert("Room creation failed");
         return;
       }
 
-      const res = await API.post("/interviews/create-room", {
-        candidateEmail
-      });
-
-      if (res.data?.roomId) {
-        navigate(`/room/${res.data.roomId}`);
-      }
+      navigate(`/room/${roomId}`);
 
     } catch (err) {
 
-      console.log("Create interview API failed:", err);
+      console.log("Create interview failed:", err);
 
-      alert("Failed to create interview room");
+      const fallbackRoom = Math.random().toString(36).substring(2, 10);
+      navigate(`/room/${fallbackRoom}`);
 
     }
 
   };
 
   const joinRoom = (roomId) => {
+
+    if (!roomId) return;
+
     navigate(`/room/${roomId}`);
+
   };
 
-  const deleteRoom = async (roomId) => {
+  const deleteRoom = async (id) => {
 
     try {
 
-      await API.delete(`/interviews/${roomId}`);
+      await API.delete(`/interviews/${id}`);
 
-      setInterviews(prev =>
-        prev.filter(i => i.roomId !== roomId)
-      );
+      setInterviews(prev => prev.filter(i => i._id !== id));
 
     } catch (err) {
 
       console.log("Delete failed:", err);
+      alert("Delete failed");
 
     }
 
   };
 
-  const completeRoom = async (roomId) => {
+  const completeRoom = async (id) => {
 
     try {
 
-      await API.post(`/interviews/${roomId}/end`);
+      await API.patch(`/interviews/${id}/complete`);
 
-      alert("Interview marked as completed");
+      alert("Interview completed");
 
       fetchInterviews();
 
     } catch (err) {
 
       console.log("Complete failed:", err);
+      alert("Complete failed");
 
     }
 
   };
 
   return (
+
     <>
       <Navbar />
 
@@ -113,7 +124,9 @@ const Dashboard = () => {
         </div>
 
         {interviews.length === 0 ? (
+
           <p>No interviews yet</p>
+
         ) : (
 
           <div style={{
@@ -154,7 +167,7 @@ const Dashboard = () => {
                   </button>
 
                   <button
-                    onClick={() => deleteRoom(interview.roomId)}
+                    onClick={() => deleteRoom(interview._id)}
                     style={{
                       background: "#ef4444",
                       color: "white",
@@ -168,7 +181,7 @@ const Dashboard = () => {
                   </button>
 
                   <button
-                    onClick={() => completeRoom(interview.roomId)}
+                    onClick={() => completeRoom(interview._id)}
                     style={{
                       background: "#3b82f6",
                       color: "white",
