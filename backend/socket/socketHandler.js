@@ -18,7 +18,7 @@ export const initializeSocketHandlers = (io) => {
 
         const room = io.sockets.adapter.rooms.get(roomId);
 
-        // limit room to 2 users
+        // limit to 2 participants
         if (room && room.size >= 2) {
           socket.emit("room-full");
           return;
@@ -32,10 +32,11 @@ export const initializeSocketHandlers = (io) => {
           roomId
         };
 
-        console.log(`${userName} joined ${roomId}`);
+        console.log(`${userName} joined room ${roomId}`);
 
         // Save candidate if missing
         try {
+
           const interview = await Interview.findOne({ roomId });
 
           if (
@@ -46,6 +47,7 @@ export const initializeSocketHandlers = (io) => {
             interview.candidate = userId;
             await interview.save();
           }
+
         } catch {}
 
         const clients = await io.in(roomId).fetchSockets();
@@ -58,17 +60,22 @@ export const initializeSocketHandlers = (io) => {
 
         io.to(roomId).emit("room-joined", { users });
 
-        // IMPORTANT: only the first user should create offer
+        // START CALL when 2 users present
         if (users.length === 2) {
 
-          const firstUserSocket = clients[0];
+          // choose the other socket to start the offer
+          const offerCreator = clients.find(s => s.id !== socket.id);
 
-          io.to(firstUserSocket.id).emit("start-call");
+          if (offerCreator) {
+            io.to(offerCreator.id).emit("start-call");
+          }
 
         }
 
       } catch (err) {
+
         console.error("Join room error:", err);
+
       }
 
     });
