@@ -16,8 +16,6 @@ export const initializeSocketHandlers = (io) => {
 
         if (!roomId) return;
 
-        if (socket.data?.roomId === roomId) return;
-
         const room = io.sockets.adapter.rooms.get(roomId);
 
         // limit room to 2 users
@@ -34,9 +32,10 @@ export const initializeSocketHandlers = (io) => {
           roomId
         };
 
+        console.log(`${userName} joined ${roomId}`);
+
         // Save candidate if missing
         try {
-
           const interview = await Interview.findOne({ roomId });
 
           if (
@@ -47,12 +46,8 @@ export const initializeSocketHandlers = (io) => {
             interview.candidate = userId;
             await interview.save();
           }
+        } catch {}
 
-        } catch (err) {
-          console.log("Candidate save skipped");
-        }
-
-        // Get users in room
         const clients = await io.in(roomId).fetchSockets();
 
         const users = clients.map(s => ({
@@ -61,20 +56,19 @@ export const initializeSocketHandlers = (io) => {
           userName: s.data?.userName
         }));
 
-        // Send updated users list to everyone
         io.to(roomId).emit("room-joined", { users });
 
-        // Start WebRTC only when 2 users present
+        // IMPORTANT: only the first user should create offer
         if (users.length === 2) {
-          io.to(roomId).emit("start-call");
+
+          const firstUserSocket = clients[0];
+
+          io.to(firstUserSocket.id).emit("start-call");
+
         }
 
-        console.log(`User ${socket.id} joined room ${roomId}`);
-
       } catch (err) {
-
         console.error("Join room error:", err);
-
       }
 
     });
@@ -137,7 +131,7 @@ export const initializeSocketHandlers = (io) => {
 
         try {
           await Chat.create(chatObj);
-        } catch (e) {}
+        } catch {}
 
         io.to(roomId).emit("chat-message", {
           ...chatObj,
@@ -168,10 +162,9 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     socket.on("offer", ({ roomId, offer }) => {
 
-      socket.to(roomId).emit("offer", {
-        offer,
-        from: socket.id
-      });
+      console.log("Forwarding offer");
+
+      socket.to(roomId).emit("offer", { offer });
 
     });
 
@@ -181,10 +174,9 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     socket.on("answer", ({ roomId, answer }) => {
 
-      socket.to(roomId).emit("answer", {
-        answer,
-        from: socket.id
-      });
+      console.log("Forwarding answer");
+
+      socket.to(roomId).emit("answer", { answer });
 
     });
 
@@ -194,10 +186,7 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     socket.on("ice-candidate", ({ roomId, candidate }) => {
 
-      socket.to(roomId).emit("ice-candidate", {
-        candidate,
-        from: socket.id
-      });
+      socket.to(roomId).emit("ice-candidate", { candidate });
 
     });
 
@@ -238,7 +227,6 @@ export const initializeSocketHandlers = (io) => {
       console.log("User disconnected:", socket.id);
 
       const roomId = socket.data?.roomId;
-
       if (!roomId) return;
 
       try {
