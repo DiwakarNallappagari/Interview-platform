@@ -39,28 +39,30 @@ const VideoCallMinimal = ({ roomId }) => {
 
       pc.ontrack = (event) => {
 
-        console.log("Remote track received");
+        console.log("Remote track received:", event.track.kind);
 
-        event.streams[0].getTracks().forEach(track => {
-          remoteStreamRef.current.addTrack(track);
-        });
+        const remoteStream = remoteStreamRef.current;
 
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStreamRef.current;
+        // avoid duplicate tracks
+        const exists = remoteStream.getTracks().find(t => t.id === event.track.id);
+        if (!exists) {
+          remoteStream.addTrack(event.track);
         }
 
-        setRemoteStream(remoteStreamRef.current);
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = remoteStream;
+        }
+
+        setRemoteStream(remoteStream);
       };
 
       pc.onicecandidate = (event) => {
 
         if (event.candidate) {
-
           socket.emit("ice-candidate", {
             roomId,
             candidate: event.candidate
           });
-
         }
 
       };
