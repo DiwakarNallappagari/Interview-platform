@@ -147,15 +147,18 @@ const InterviewRoom = () => {
   };
 
   // ==============================
-  // END INTERVIEW
+  // END INTERVIEW / LEAVE ROOM
   // ==============================
 
   const handleEndInterview = () => {
-
-    if (user?.role !== "interviewer") return;
-
-    socket.emit("end-interview", { roomId });
-
+    if (user?.role === "interviewer") {
+      // Interviewer ends the session for everyone
+      socket.emit("end-interview", { roomId });
+    } else {
+      // Candidate simply leaves without ending the session
+      socket.disconnect();
+      navigate("/dashboard");
+    }
   };
 
   // ==============================
@@ -214,16 +217,12 @@ const InterviewRoom = () => {
 
           )}
 
-          {user?.role === "interviewer" && (
-
-            <button
-              onClick={handleEndInterview}
-              className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded"
-            >
-              End Interview
-            </button>
-
-          )}
+          <button
+            onClick={handleEndInterview}
+            className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-white"
+          >
+            {user?.role === "interviewer" ? "End Interview" : "Leave Room"}
+          </button>
 
         </div>
 

@@ -1,47 +1,42 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import socket from "../utils/socket";
 
-// ── ICE servers: multiple STUN + free TURN that actually work ─────────────────
+// ── ICE servers ────────────────────────────────────────────────────────────────
 const ICE_SERVERS = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun2.l.google.com:19302" },
-    { urls: "stun:stun3.l.google.com:19302" },
-    { urls: "stun:stun4.l.google.com:19302" },
-    // openrelay TURN (public, no account needed)
+    // openrelay TURN servers (public, no account needed)
     {
       urls: "turn:openrelay.metered.ca:80",
       username: "openrelayproject",
-      credential: "openrelayproject"
+      credential: "openrelayproject",
     },
     {
       urls: "turn:openrelay.metered.ca:443",
       username: "openrelayproject",
-      credential: "openrelayproject"
+      credential: "openrelayproject",
     },
     {
       urls: "turns:openrelay.metered.ca:443",
       username: "openrelayproject",
-      credential: "openrelayproject"
+      credential: "openrelayproject",
     },
-    // numb.viagenie TURN (backup)
-    {
-      urls: "turn:numb.viagenie.ca",
-      username: "webrtc@live.com",
-      credential: "muazkh"
-    }
-  ]
+  ],
 };
 
 const VideoCallMinimal = ({ roomId }) => {
   const localVideoRef  = useRef(null);
   const remoteVideoRef = useRef(null);
 
-  const pcRef             = useRef(null);
-  const localStreamRef    = useRef(null);
-  const pendingCandidates = useRef([]);
-  const restartTimeout    = useRef(null);
+  const pcRef              = useRef(null);
+  const localStreamRef     = useRef(null);
+  const pendingCandidates  = useRef([]);
+  const restartTimeout     = useRef(null);
+
+  // ─── KEY FIX: track if start-call arrived before PC was ready ─────────────
+  const startCallPending   = useRef(false);
 
   const [remoteConnected, setRemoteConnected] = useState(false);
   const [playBlocked,     setPlayBlocked]     = useState(false);
@@ -50,51 +45,69 @@ const VideoCallMinimal = ({ roomId }) => {
   const [screenSharing,   setScreenSharing]   = useState(false);
   const [status,          setStatus]          = useState("Starting camera...");
 
-  // ─── Create RTCPeerConnection ───────────────────────────────────────────────
-  const createPC = (stream) => {
+  // ─── flush queued ICE candidates ──────────────────────────────────────────
+  const flushCandidates = useCallback(async (pc) => {
+    while (pendingCandidates.current.length > 0) {
+      const c = pendingCandidates.current.shift();
+      try { await pc.addIceCandidate(c); } catch (e) { console.warn("ICE flush err:", e); }
+    }
+  }, []);
+
+  // ─── actually send the offer (called once PC is guaranteed ready) ─────────
+  const createAndSendOffer = useCallback(async (pc) => {
+    console.log("▶ createAndSendOffer → creating offer");
+    setStatus("Connecting...");
+    try {
+      const offer = await pc.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
+      });
+      await pc.setLocalDescription(offer);
+      socket.emit("offer", { roomId, offer });
+    } catch (err) {
+      console.error("Offer error:", err);
+    }
+  }, [roomId]);
+
+  // ─── Create RTCPeerConnection ──────────────────────────────────────────────
+  const createPC = useCallback((stream) => {
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
-    // Add all local tracks immediately so both sides negotiate them
-    stream.getTracks().forEach(track => pc.addTrack(track, stream));
+    // Add all local tracks so both sides negotiate them
+    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-    // ── Remote track: manually collect tracks (most bulletproof) ──────────────
+    // Remote track handler — most bulletproof approach
     pc.ontrack = (event) => {
       console.log("🎥 Remote track received:", event.track.kind);
-      
-      if (remoteVideoRef.current) {
-        let stream = remoteVideoRef.current.srcObject;
-        if (!stream) {
-          stream = new MediaStream();
-          remoteVideoRef.current.srcObject = stream;
-        }
-        
-        // Add track if it doesn't already exist in the stream
-        if (!stream.getTracks().find(t => t.id === event.track.id)) {
-          stream.addTrack(event.track);
-        }
 
-        // Force play and log if blocked by browser autoplay rules
-        const playPromise = remoteVideoRef.current.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(e => {
-            console.error("Autoplay blocked by browser:", e);
+      if (remoteVideoRef.current) {
+        let ms = remoteVideoRef.current.srcObject;
+        if (!ms) {
+          ms = new MediaStream();
+          remoteVideoRef.current.srcObject = ms;
+        }
+        if (!ms.getTracks().find((t) => t.id === event.track.id)) {
+          ms.addTrack(event.track);
+        }
+        const p = remoteVideoRef.current.play();
+        if (p !== undefined) {
+          p.catch((e) => {
+            console.error("Autoplay blocked:", e);
             setPlayBlocked(true);
           });
         }
       }
-      
+
       setRemoteConnected(true);
       setStatus("Connected ✅");
     };
 
-    // ── ICE candidate ─────────────────────────────────────────────────────────
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit("ice-candidate", { roomId, candidate: event.candidate });
       }
     };
 
-    // ── ICE connection state ──────────────────────────────────────────────────
     pc.oniceconnectionstatechange = () => {
       console.log("ICE state:", pc.iceConnectionState);
       switch (pc.iceConnectionState) {
@@ -106,7 +119,6 @@ const VideoCallMinimal = ({ roomId }) => {
           break;
         case "disconnected":
           setStatus("Connection unstable — retrying...");
-          // give it 3s to recover before forcing ICE restart
           restartTimeout.current = setTimeout(() => {
             if (pc.iceConnectionState === "disconnected") {
               console.log("Restarting ICE after disconnect timeout...");
@@ -133,58 +145,27 @@ const VideoCallMinimal = ({ roomId }) => {
     };
 
     return pc;
-  };
+  }, [roomId]);
 
-  // ─── flush queued ICE candidates ───────────────────────────────────────────
-  const flushCandidates = async (pc) => {
-    while (pendingCandidates.current.length > 0) {
-      const c = pendingCandidates.current.shift();
-      try { await pc.addIceCandidate(c); } catch (e) { console.warn("ICE flush err:", e); }
-    }
-  };
-
-  // ─── Main useEffect ────────────────────────────────────────────────────────
+  // ─── Main useEffect ───────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
 
-    const init = async () => {
-      try {
-        setStatus("Requesting camera/mic...");
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: true
-        });
-        if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }
+    // ── start-call: server tells the FIRST user to make the offer ────────────
+    // Registered IMMEDIATELY (before getUserMedia) so we never miss the event.
+    const handleStartCall = () => {
+      if (!mounted) return;
+      console.log("📣 start-call received");
 
-        localStreamRef.current = stream;
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
-          localVideoRef.current.play().catch(() => {});
-        }
-
-        const pc = createPC(stream);
-        pcRef.current = pc;
-        setStatus("Waiting for other participant...");
-      } catch (err) {
-        console.error("Media error:", err);
-        setStatus("❌ Camera/Mic access denied");
-        alert("Please allow camera and microphone access.");
+      if (pcRef.current) {
+        // PC already ready → send offer immediately
+        createAndSendOffer(pcRef.current);
+      } else {
+        // PC not ready yet → flag so we send offer as soon as init() finishes
+        console.log("⏳ PC not ready yet, queuing start-call...");
+        startCallPending.current = true;
+        setStatus("Connecting...");
       }
-    };
-
-    init();
-
-    // ── start-call: server tells the FIRST user to make the offer ─────────────
-    const handleStartCall = async () => {
-      const pc = pcRef.current;
-      if (!pc || !mounted) return;
-      console.log("▶ start-call → creating offer");
-      setStatus("Connecting...");
-      try {
-        const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-        await pc.setLocalDescription(offer);
-        socket.emit("offer", { roomId, offer });
-      } catch (err) { console.error("Offer error:", err); }
     };
 
     // ── offer: second user receives and answers ───────────────────────────────
@@ -199,7 +180,9 @@ const VideoCallMinimal = ({ roomId }) => {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
         socket.emit("answer", { roomId, answer });
-      } catch (err) { console.error("Answer error:", err); }
+      } catch (err) {
+        console.error("Answer error:", err);
+      }
     };
 
     // ── answer: first user sets remote description ────────────────────────────
@@ -212,7 +195,9 @@ const VideoCallMinimal = ({ roomId }) => {
           await pc.setRemoteDescription(new RTCSessionDescription(answer));
           await flushCandidates(pc);
         }
-      } catch (err) { console.error("Answer set error:", err); }
+      } catch (err) {
+        console.error("Answer set error:", err);
+      }
     };
 
     // ── ice-candidate: queue if remote description not yet set ────────────────
@@ -228,7 +213,7 @@ const VideoCallMinimal = ({ roomId }) => {
       }
     };
 
-    // ── user-left ─────────────────────────────────────────────────────────────
+    // ── user-left ──────────────────────────────────────────────────────────────
     const handleUserLeft = () => {
       if (!mounted) return;
       setRemoteConnected(false);
@@ -236,11 +221,49 @@ const VideoCallMinimal = ({ roomId }) => {
       if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
     };
 
+    // ─── Register ALL socket listeners BEFORE getUserMedia ───────────────────
+    // This is the key fix: events registered synchronously, before any async work.
     socket.on("start-call",    handleStartCall);
     socket.on("offer",         handleOffer);
     socket.on("answer",        handleAnswer);
     socket.on("ice-candidate", handleIceCandidate);
     socket.on("user-left",     handleUserLeft);
+
+    // ─── Now do async init ────────────────────────────────────────────────────
+    const init = async () => {
+      try {
+        setStatus("Requesting camera/mic...");
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: true,
+        });
+        if (!mounted) { stream.getTracks().forEach((t) => t.stop()); return; }
+
+        localStreamRef.current = stream;
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = stream;
+          localVideoRef.current.play().catch(() => {});
+        }
+
+        const pc = createPC(stream);
+        pcRef.current = pc;
+
+        // ─── KEY FIX: if start-call arrived while we were in getUserMedia ────
+        if (startCallPending.current) {
+          startCallPending.current = false;
+          console.log("🔄 Flushing queued start-call now that PC is ready");
+          await createAndSendOffer(pc);
+        } else {
+          setStatus("Waiting for other participant...");
+        }
+      } catch (err) {
+        console.error("Media error:", err);
+        setStatus("❌ Camera/Mic access denied");
+        alert("Please allow camera and microphone access.");
+      }
+    };
+
+    init();
 
     return () => {
       mounted = false;
@@ -254,11 +277,11 @@ const VideoCallMinimal = ({ roomId }) => {
 
       if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(t => t.stop());
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
         localStreamRef.current = null;
       }
     };
-  }, [roomId]);
+  }, [roomId, createPC, createAndSendOffer, flushCandidates]);
 
   // ─── Controls ──────────────────────────────────────────────────────────────
   const toggleCamera = () => {
@@ -280,7 +303,7 @@ const VideoCallMinimal = ({ roomId }) => {
       try {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
         const screenTrack  = screenStream.getVideoTracks()[0];
-        const sender = pcRef.current?.getSenders().find(s => s.track?.kind === "video");
+        const sender = pcRef.current?.getSenders().find((s) => s.track?.kind === "video");
         if (sender) await sender.replaceTrack(screenTrack);
         if (localVideoRef.current) localVideoRef.current.srcObject = screenStream;
         screenTrack.onended = stopScreenShare;
@@ -293,7 +316,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const stopScreenShare = async () => {
     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
-    const sender = pcRef.current?.getSenders().find(s => s.track?.kind === "video");
+    const sender = pcRef.current?.getSenders().find((s) => s.track?.kind === "video");
     if (sender && videoTrack) await sender.replaceTrack(videoTrack);
     if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
     setScreenSharing(false);
@@ -315,16 +338,16 @@ const VideoCallMinimal = ({ roomId }) => {
 
         {/* Autoplay Blocked Overlay */}
         {playBlocked && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-80 z-10 transition-opacity">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-80 z-10">
             <button
               onClick={() => {
                 remoteVideoRef.current?.play().then(() => setPlayBlocked(false));
               }}
-              className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-full text-white font-bold shadow-2xl flex items-center gap-2 transform transition-transform hover:scale-105"
+              className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-full text-white font-bold shadow-2xl"
             >
               ▶ Click to Play Video
             </button>
-            <p className="text-gray-300 mt-4 text-sm font-medium">Browser prevented auto-play</p>
+            <p className="text-gray-300 mt-4 text-sm">Browser prevented auto-play</p>
           </div>
         )}
 

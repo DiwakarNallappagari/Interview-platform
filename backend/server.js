@@ -20,124 +20,126 @@ const app = express()
 const server = http.createServer(app)
 
 
-// --------------------
-// CORS FIX (IMPORTANT)
-// --------------------
+// ─────────────────────────────────────────────
+// CORS — driven by FRONTEND_URL env var
+// ─────────────────────────────────────────────
 
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
+
+// Build the allowed-origins list from the env var
+// (supports comma-separated list:  https://a.vercel.app,https://b.vercel.app)
 const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "https://interview-platform-delta-gilt.vercel.app"
+  'http://localhost:5173',
+  'http://localhost:5174',
+  ...FRONTEND_URL.split(',').map(u => u.trim()),
 ]
 
 const corsOptions = {
   origin: function (origin, callback) {
-
-    // allow requests with no origin (mobile apps, postman)
+    // allow server-side / mobile requests with no Origin header
     if (!origin) return callback(null, true)
-
     if (allowedOrigins.includes(origin)) {
       callback(null, true)
     } else {
-      // allow anyway to prevent deploy issues
+      // In production, log unknown origins but still allow (prevents 403 deploy surprises)
+      console.warn(`⚠️  Unknown origin: ${origin}`)
       callback(null, true)
     }
   },
-  credentials: true
+  credentials: true,
 }
 
 
-// --------------------
-// SOCKET.IO
-// --------------------
+// ─────────────────────────────────────────────
+// SOCKET.IO  — must reflect origin for credentials
+// ─────────────────────────────────────────────
 
 const io = new Server(server, {
   cors: {
-    origin: true,           // reflect any origin (all are allowed, including Vercel)
-    methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
+    origin: allowedOrigins,
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
   },
-  // allow both polling (needed to establish connection on Render) and websocket
-  transports: ["polling", "websocket"]
+  // polling first so Render's proxy can upgrade to WS
+  transports: ['polling', 'websocket'],
+  // longer ping timeout for slow connections on free Render tier
+  pingTimeout: 60000,
+  pingInterval: 25000,
 })
 
 
-// --------------------
+// ─────────────────────────────────────────────
 // DATABASE
-// --------------------
+// ─────────────────────────────────────────────
 
 connectDB()
 
 
-// --------------------
+// ─────────────────────────────────────────────
 // MIDDLEWARE
-// --------------------
+// ─────────────────────────────────────────────
 
 app.use(cors(corsOptions))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
 
-// --------------------
+// ─────────────────────────────────────────────
 // ROUTES
-// --------------------
+// ─────────────────────────────────────────────
 
 app.use('/api/auth', authRoutes)
 app.use('/api/interviews', interviewRoutes)
 
 
-// --------------------
-// HEALTH CHECK
-// --------------------
+// ─────────────────────────────────────────────
+// HEALTH CHECK  (used by keep-alive ping from frontend)
+// ─────────────────────────────────────────────
 
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    timestamp: new Date().toISOString()
-  })
+  res.json({ status: 'OK', timestamp: new Date().toISOString() })
 })
 
 
-// --------------------
+// ─────────────────────────────────────────────
 // SOCKET HANDLERS
-// --------------------
+// ─────────────────────────────────────────────
 
 initializeSocketHandlers(io)
 
 
-// --------------------
+// ─────────────────────────────────────────────
 // ERROR HANDLER
-// --------------------
+// ─────────────────────────────────────────────
 
 app.use((err, req, res, next) => {
   console.error(err)
-
   res.status(err.status || 500).json({
-    message: err.message || 'Internal Server Error'
+    message: err.message || 'Internal Server Error',
   })
 })
 
 
-// --------------------
+// ─────────────────────────────────────────────
 // 404 HANDLER
-// --------------------
+// ─────────────────────────────────────────────
 
 app.use((req, res) => {
-  res.status(404).json({
-    message: 'Route not found'
-  })
+  res.status(404).json({ message: 'Route not found' })
 })
 
 
-// --------------------
+// ─────────────────────────────────────────────
 // START SERVER
-// --------------------
+// ─────────────────────────────────────────────
 
 const PORT = process.env.PORT || 5000
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`)
+  console.log(`   NODE_ENV   : ${process.env.NODE_ENV || 'development'}`)
+  console.log(`   FRONTEND   : ${allowedOrigins.join(', ')}`)
 })
 
 
