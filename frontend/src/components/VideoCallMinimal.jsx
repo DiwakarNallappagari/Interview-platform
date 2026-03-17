@@ -44,6 +44,7 @@ const VideoCallMinimal = ({ roomId }) => {
   const restartTimeout    = useRef(null);
 
   const [remoteConnected, setRemoteConnected] = useState(false);
+  const [playBlocked,     setPlayBlocked]     = useState(false);
   const [cameraOn,        setCameraOn]        = useState(true);
   const [micOn,           setMicOn]           = useState(true);
   const [screenSharing,   setScreenSharing]   = useState(false);
@@ -56,18 +57,34 @@ const VideoCallMinimal = ({ roomId }) => {
     // Add all local tracks immediately so both sides negotiate them
     stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
-    // ── Remote track: use event.streams[0] directly (most reliable) ──────────
+    // ── Remote track: manually collect tracks (most bulletproof) ──────────────
     pc.ontrack = (event) => {
       console.log("🎥 Remote track received:", event.track.kind);
-      if (event.streams && event.streams[0]) {
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
-          // force play in case autoPlay was blocked
-          remoteVideoRef.current.play().catch(() => {});
+      
+      if (remoteVideoRef.current) {
+        let stream = remoteVideoRef.current.srcObject;
+        if (!stream) {
+          stream = new MediaStream();
+          remoteVideoRef.current.srcObject = stream;
         }
-        setRemoteConnected(true);
-        setStatus("Connected ✅");
+        
+        // Add track if it doesn't already exist in the stream
+        if (!stream.getTracks().find(t => t.id === event.track.id)) {
+          stream.addTrack(event.track);
+        }
+
+        // Force play and log if blocked by browser autoplay rules
+        const playPromise = remoteVideoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(e => {
+            console.error("Autoplay blocked by browser:", e);
+            setPlayBlocked(true);
+          });
+        }
       }
+      
+      setRemoteConnected(true);
+      setStatus("Connected ✅");
     };
 
     // ── ICE candidate ─────────────────────────────────────────────────────────
@@ -295,6 +312,21 @@ const VideoCallMinimal = ({ roomId }) => {
           playsInline
           className="w-full h-full object-cover"
         />
+
+        {/* Autoplay Blocked Overlay */}
+        {playBlocked && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900 bg-opacity-80 z-10 transition-opacity">
+            <button
+              onClick={() => {
+                remoteVideoRef.current?.play().then(() => setPlayBlocked(false));
+              }}
+              className="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-full text-white font-bold shadow-2xl flex items-center gap-2 transform transition-transform hover:scale-105"
+            >
+              ▶ Click to Play Video
+            </button>
+            <p className="text-gray-300 mt-4 text-sm font-medium">Browser prevented auto-play</p>
+          </div>
+        )}
 
         {/* Overlay only when not connected */}
         {!remoteConnected && (
