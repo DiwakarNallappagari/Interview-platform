@@ -203,24 +203,21 @@ export const initializeSocketHandlers = (io) => {
     // ==============================
     socket.on("end-interview", async ({ roomId }) => {
 
-      try {
+      console.log("end-interview received for room:", roomId);
 
+      // Always notify all participants — DB update is best-effort
+      io.to(roomId).emit("interview-ended", {
+        message: "Interview ended"
+      });
+
+      // Update DB in background (don't block the emit above)
+      try {
         await Interview.findOneAndUpdate(
           { roomId },
-          {
-            status: "completed",
-            endTime: new Date()
-          }
+          { status: "completed", endTime: new Date() }
         );
-
-        io.to(roomId).emit("interview-ended", {
-          message: "Interview ended"
-        });
-
       } catch (err) {
-
-        console.error("End interview error:", err);
-
+        console.error("DB update error on end-interview (non-fatal):", err);
       }
 
     });
