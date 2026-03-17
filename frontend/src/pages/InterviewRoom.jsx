@@ -150,13 +150,12 @@ const InterviewRoom = () => {
   // END INTERVIEW / LEAVE ROOM
   // ==============================
 
-  const handleEndInterview = () => {
+  const handleEndInterview = async () => {
     if (user?.role === "interviewer") {
       // Interviewer ends the session for everyone
       socket.emit("end-interview", { roomId });
     } else {
-      // Candidate simply leaves without ending the session
-      socket.disconnect();
+      // Candidate simply leaves
       navigate("/dashboard");
     }
   };

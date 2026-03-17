@@ -80,7 +80,11 @@ const VideoCallMinimal = ({ roomId }) => {
     pc.ontrack = (event) => {
       console.log("🎥 Remote track received:", event.track.kind);
 
-      if (remoteVideoRef.current) {
+      if (remoteVideoRef.current && event.streams && event.streams[0]) {
+        if (remoteVideoRef.current.srcObject !== event.streams[0]) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+        }
+      } else if (remoteVideoRef.current) {
         let ms = remoteVideoRef.current.srcObject;
         if (!ms) {
           ms = new MediaStream();
@@ -89,13 +93,18 @@ const VideoCallMinimal = ({ roomId }) => {
         if (!ms.getTracks().find((t) => t.id === event.track.id)) {
           ms.addTrack(event.track);
         }
-        const p = remoteVideoRef.current.play();
-        if (p !== undefined) {
-          p.catch((e) => {
+      }
+
+      const p = remoteVideoRef.current?.play();
+      if (p !== undefined) {
+        p.catch((e) => {
+          if (e.name === "NotAllowedError") {
             console.error("Autoplay blocked:", e);
             setPlayBlocked(true);
-          });
-        }
+          } else {
+            console.warn("Play promise error:", e.name, e.message);
+          }
+        });
       }
 
       setRemoteConnected(true);
@@ -150,6 +159,41 @@ const VideoCallMinimal = ({ roomId }) => {
   // ─── Main useEffect ───────────────────────────────────────────────────────
   useEffect(() => {
     let mounted = true;
+    
+    // We use a mutable array in a ref to store signals that arrive before pcRef.current is ready
+    const signalingQueue = useRef([]);
+
+    // Helper to process the queue once PC is ready
+    const processSignalingQueue = async (pc) => {
+      while (signalingQueue.current.length > 0 && mounted) {
+        const msg = signalingQueue.current.shift();
+        try {
+          if (msg.type === "offer") {
+            console.log("📨 Processing queued offer");
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+            await flushCandidates(pc);
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socket.emit("answer", { roomId, answer });
+          } else if (msg.type === "answer") {
+            console.log("📨 Processing queued answer");
+            if (pc.signalingState === "have-local-offer") {
+              await pc.setRemoteDescription(new RTCSessionDescription(msg.payload));
+              await flushCandidates(pc);
+            }
+          } else if (msg.type === "candidate") {
+            const ice = new RTCIceCandidate(msg.payload);
+            if (pc.remoteDescription?.type) {
+              await pc.addIceCandidate(ice);
+            } else {
+              pendingCandidates.current.push(ice);
+            }
+          }
+        } catch (err) {
+          console.error(`Error processing queued ${msg.type}:`, err);
+        }
+      }
+    };
 
     // ── start-call: server tells the FIRST user to make the offer ────────────
     // Registered IMMEDIATELY (before getUserMedia) so we never miss the event.
@@ -170,8 +214,13 @@ const VideoCallMinimal = ({ roomId }) => {
 
     // ── offer: second user receives and answers ───────────────────────────────
     const handleOffer = async ({ offer }) => {
+      if (!mounted) return;
       const pc = pcRef.current;
-      if (!pc || !mounted) return;
+      if (!pc) {
+        console.log("⏳ PC not ready yet, queuing offer...");
+        signalingQueue.current.push({ type: "offer", payload: offer });
+        return;
+      }
       console.log("📨 Offer received → creating answer");
       setStatus("Connecting...");
       try {
@@ -187,8 +236,13 @@ const VideoCallMinimal = ({ roomId }) => {
 
     // ── answer: first user sets remote description ────────────────────────────
     const handleAnswer = async ({ answer }) => {
+      if (!mounted) return;
       const pc = pcRef.current;
-      if (!pc || !mounted) return;
+      if (!pc) {
+        console.log("⏳ PC not ready yet, queuing answer...");
+        signalingQueue.current.push({ type: "answer", payload: answer });
+        return;
+      }
       console.log("📨 Answer received");
       try {
         if (pc.signalingState === "have-local-offer") {
@@ -204,7 +258,10 @@ const VideoCallMinimal = ({ roomId }) => {
     const handleIceCandidate = async ({ candidate }) => {
       if (!candidate || !mounted) return;
       const pc = pcRef.current;
-      if (!pc) return;
+      if (!pc) {
+        signalingQueue.current.push({ type: "candidate", payload: candidate });
+        return;
+      }
       const ice = new RTCIceCandidate(candidate);
       if (pc.remoteDescription?.type) {
         try { await pc.addIceCandidate(ice); } catch (e) { console.warn("ICE err:", e); }
@@ -248,12 +305,15 @@ const VideoCallMinimal = ({ roomId }) => {
         const pc = createPC(stream);
         pcRef.current = pc;
 
+        // ─── PROCESS QUEUED SIGNALS ──────────────────────────────────────────
+        await processSignalingQueue(pc);
+
         // ─── KEY FIX: if start-call arrived while we were in getUserMedia ────
         if (startCallPending.current) {
           startCallPending.current = false;
           console.log("🔄 Flushing queued start-call now that PC is ready");
           await createAndSendOffer(pc);
-        } else {
+        } else if (signalingQueue.current.length === 0) {
           setStatus("Waiting for other participant...");
         }
       } catch (err) {
@@ -274,6 +334,9 @@ const VideoCallMinimal = ({ roomId }) => {
       socket.off("answer",        handleAnswer);
       socket.off("ice-candidate", handleIceCandidate);
       socket.off("user-left",     handleUserLeft);
+      
+      // Prevent pending promises from modifying state
+      signalingQueue.current = [];
 
       if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
       if (localStreamRef.current) {

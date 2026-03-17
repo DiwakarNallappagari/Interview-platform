@@ -32,9 +32,12 @@ const Dashboard = () => {
 
   const createInterview = async () => {
 
+    const candidateEmail = window.prompt("Enter candidate email (required to create room):");
+    if (!candidateEmail) return;
+
     try {
 
-      const res = await API.post("/interviews/create-room");
+      const res = await API.post("/interviews/create-room", { candidateEmail, language: "javascript" });
 
       const roomId = res?.data?.roomId;
 
