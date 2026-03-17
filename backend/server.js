@@ -52,7 +52,14 @@ const corsOptions = {
 // --------------------
 
 const io = new Server(server, {
-  cors: corsOptions
+  cors: {
+    origin: true,           // reflect any origin (all are allowed, including Vercel)
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true
+  },
+  // allow both polling (needed to establish connection on Render) and websocket
+  transports: ["polling", "websocket"]
 })
 
 

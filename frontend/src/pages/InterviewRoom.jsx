@@ -40,23 +40,32 @@ const InterviewRoom = () => {
   // SOCKET CONNECTION
   // ==============================
 
+  // ── Connect socket and join room once ──────────────────────────────────────
   useEffect(() => {
 
     if (!user || !roomId) return;
 
-    if (!socket.connected) socket.connect();
+    // Connect if not already connected (socket has autoConnect: false)
+    if (!socket.connected) {
+      socket.connect();
+    }
 
-    // Prevent duplicate joins
-    if (!hasJoinedRef.current) {
+    // Wait for connection then emit join-room exactly once
+    const doJoin = () => {
+      if (!hasJoinedRef.current) {
+        socket.emit("join-room", {
+          roomId,
+          userId: user._id,
+          userName: user.name
+        });
+        hasJoinedRef.current = true;
+      }
+    };
 
-      socket.emit("join-room", {
-        roomId,
-        userId: user._id,
-        userName: user.name
-      });
-
-      hasJoinedRef.current = true;
-
+    if (socket.connected) {
+      doJoin();
+    } else {
+      socket.once("connect", doJoin);
     }
 
     const handleRoomJoined = (data) => {
@@ -64,28 +73,19 @@ const InterviewRoom = () => {
     };
 
     const handleUserJoined = (data) => {
-
       setRoomUsers(prev => {
-
         const exists = prev.find(u => u.socketId === data.socketId);
         if (exists) return prev;
-
         return [...prev, data];
-
       });
-
     };
 
     const handleUserLeft = ({ socketId, users }) => {
-
       if (users) {
         setRoomUsers(users);
       } else {
-        setRoomUsers(prev =>
-          prev.filter(u => u.socketId !== socketId)
-        );
+        setRoomUsers(prev => prev.filter(u => u.socketId !== socketId));
       }
-
     };
 
     const handleChat = (msg) => {
@@ -93,29 +93,24 @@ const InterviewRoom = () => {
     };
 
     const handleInterviewEnded = () => {
-
       alert("Interview finished");
-
       socket.disconnect();
-
       navigate("/dashboard");
-
     };
 
-    socket.on("room-joined", handleRoomJoined);
-    socket.on("user-joined", handleUserJoined);
-    socket.on("user-left", handleUserLeft);
-    socket.on("chat-message", handleChat);
-    socket.on("interview-ended", handleInterviewEnded);
+    socket.on("room-joined",      handleRoomJoined);
+    socket.on("user-joined",      handleUserJoined);
+    socket.on("user-left",        handleUserLeft);
+    socket.on("chat-message",     handleChat);
+    socket.on("interview-ended",  handleInterviewEnded);
 
     return () => {
-
-      socket.off("room-joined", handleRoomJoined);
-      socket.off("user-joined", handleUserJoined);
-      socket.off("user-left", handleUserLeft);
-      socket.off("chat-message", handleChat);
-      socket.off("interview-ended", handleInterviewEnded);
-
+      socket.off("connect",        doJoin);
+      socket.off("room-joined",    handleRoomJoined);
+      socket.off("user-joined",    handleUserJoined);
+      socket.off("user-left",      handleUserLeft);
+      socket.off("chat-message",   handleChat);
+      socket.off("interview-ended",handleInterviewEnded);
     };
 
   }, [roomId, user, navigate]);

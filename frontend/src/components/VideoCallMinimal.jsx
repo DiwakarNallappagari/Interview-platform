@@ -1,102 +1,135 @@
 import React, { useEffect, useRef, useState } from "react";
 import socket from "../utils/socket";
 
+const ICE_SERVERS = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    // Free TURN from Metered (reliable public TURN)
+    {
+      urls: "turn:a.relay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    },
+    {
+      urls: "turn:a.relay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    },
+    {
+      urls: "turn:a.relay.metered.ca:443?transport=tcp",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    }
+  ]
+};
+
 const VideoCallMinimal = ({ roomId }) => {
 
-  const localVideoRef = useRef(null);
+  const localVideoRef  = useRef(null);
   const remoteVideoRef = useRef(null);
 
-  const pcRef = useRef(null);
-  const localStreamRef = useRef(null);
-  const remoteStreamRef = useRef(new MediaStream());
+  const pcRef             = useRef(null);
+  const localStreamRef    = useRef(null);
   const pendingCandidates = useRef([]);
+  const isOfferCreator    = useRef(false);
 
-  const [remoteStream, setRemoteStream] = useState(null);
-  const [cameraOn, setCameraOn] = useState(true);
-  const [micOn, setMicOn] = useState(true);
-  const [screenSharing, setScreenSharing] = useState(false);
+  const [remoteConnected, setRemoteConnected] = useState(false);
+  const [cameraOn,        setCameraOn]        = useState(true);
+  const [micOn,           setMicOn]           = useState(true);
+  const [screenSharing,   setScreenSharing]   = useState(false);
+  const [status,          setStatus]          = useState("Initializing...");
 
-  useEffect(() => {
+  // ─── Create RTCPeerConnection ───────────────────────────────────────────────
+  const createPC = () => {
 
-    const createPeerConnection = () => {
+    const pc = new RTCPeerConnection(ICE_SERVERS);
 
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-          {
-            urls: "turn:openrelay.metered.ca:80",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-          },
-          {
-            urls: "turn:openrelay.metered.ca:443",
-            username: "openrelayproject",
-            credential: "openrelayproject"
-          }
-        ]
-      });
-
-      pc.ontrack = (event) => {
-
-        console.log("Remote track received:", event.track.kind);
-
-        const remoteStream = remoteStreamRef.current;
-
+    pc.ontrack = (event) => {
+      console.log("Remote track received:", event.track.kind);
+      if (remoteVideoRef.current) {
+        let stream = remoteVideoRef.current.srcObject;
+        if (!stream) {
+          stream = new MediaStream();
+          remoteVideoRef.current.srcObject = stream;
+        }
         // avoid duplicate tracks
-        const exists = remoteStream.getTracks().find(t => t.id === event.track.id);
-        if (!exists) {
-          remoteStream.addTrack(event.track);
+        if (!stream.getTracks().find(t => t.id === event.track.id)) {
+          stream.addTrack(event.track);
         }
-
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = remoteStream;
-        }
-
-        setRemoteStream(remoteStream);
-      };
-
-      pc.onicecandidate = (event) => {
-
-        if (event.candidate) {
-          socket.emit("ice-candidate", {
-            roomId,
-            candidate: event.candidate
-          });
-        }
-
-      };
-
-      pc.onconnectionstatechange = () => {
-
-        console.log("Connection state:", pc.connectionState);
-
-        if (pc.connectionState === "failed") {
-          console.log("Restarting ICE...");
-          pc.restartIce();
-        }
-
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        console.log("ICE state:", pc.iceConnectionState);
-      };
-
-      return pc;
+      }
+      setRemoteConnected(true);
+      setStatus("Connected");
     };
 
-    const startCall = async () => {
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit("ice-candidate", { roomId, candidate: event.candidate });
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log("ICE state:", pc.iceConnectionState);
+      if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+        setStatus("Connection lost — reconnecting...");
+        setRemoteConnected(false);
+        if (pc.iceConnectionState === "failed") {
+          pc.restartIce();
+        }
+      }
+      if (pc.iceConnectionState === "connected" || pc.iceConnectionState === "completed") {
+        setStatus("Connected");
+        setRemoteConnected(true);
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log("Peer connection state:", pc.connectionState);
+    };
+
+    return pc;
+  };
+
+  // ─── Add local tracks to peer connection ───────────────────────────────────
+  const addTracksToPC = (pc, stream) => {
+    stream.getTracks().forEach(track => {
+      pc.addTrack(track, stream);
+    });
+  };
+
+  // ─── Flush pending ICE candidates ──────────────────────────────────────────
+  const flushCandidates = async (pc) => {
+    while (pendingCandidates.current.length > 0) {
+      const candidate = pendingCandidates.current.shift();
+      try {
+        await pc.addIceCandidate(candidate);
+      } catch (err) {
+        console.warn("Failed to add pending ICE candidate:", err);
+      }
+    }
+  };
+
+  // ─── Main effect ───────────────────────────────────────────────────────────
+  useEffect(() => {
+
+    let mounted = true;
+
+    const init = async () => {
 
       try {
 
-        if (!socket.connected) socket.connect();
-
-        const user = JSON.parse(localStorage.getItem("user"));
+        setStatus("Requesting camera/mic...");
 
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: true
         });
+
+        if (!mounted) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
 
         localStreamRef.current = stream;
 
@@ -104,96 +137,130 @@ const VideoCallMinimal = ({ roomId }) => {
           localVideoRef.current.srcObject = stream;
         }
 
-        const pc = createPeerConnection();
+        const pc = createPC();
         pcRef.current = pc;
+        addTracksToPC(pc, stream);
 
-        stream.getTracks().forEach(track => {
-          pc.addTrack(track, stream);
-        });
-
-        socket.emit("join-room", {
-          roomId,
-          userId: user?._id,
-          userName: user?.name
-        });
+        setStatus("Waiting for other participant...");
 
       } catch (err) {
-
         console.error("Media error:", err);
-        alert("Camera/Mic permission required");
-
+        setStatus("Camera/Mic access denied");
+        alert("Please allow camera and microphone access to use the video call.");
       }
-
     };
 
-    startCall();
+    init();
 
-    socket.on("start-call", async () => {
-
-      const pc = pcRef.current;
-      if (!pc) return;
-
-      console.log("Creating offer");
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      socket.emit("offer", { roomId, offer });
-
-    });
-
-    socket.on("offer", async ({ offer }) => {
+    // ── Socket: server tells the FIRST user to create an offer ────────────────
+    const handleStartCall = async () => {
 
       const pc = pcRef.current;
-      if (!pc) return;
+      if (!pc || !mounted) return;
 
-      console.log("Received offer");
+      console.log("start-call received — creating offer");
+      isOfferCreator.current = true;
+      setStatus("Connecting...");
 
-      await pc.setRemoteDescription(new RTCSessionDescription(offer));
-
-      while (pendingCandidates.current.length) {
-        await pc.addIceCandidate(pendingCandidates.current.shift());
+      try {
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true
+        });
+        await pc.setLocalDescription(offer);
+        socket.emit("offer", { roomId, offer });
+      } catch (err) {
+        console.error("Error creating offer:", err);
       }
+    };
 
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
+    // ── Socket: second user receives the offer ────────────────────────────────
+    const handleOffer = async ({ offer }) => {
 
-      socket.emit("answer", { roomId, answer });
+      const pc = pcRef.current;
+      if (!pc || !mounted) return;
 
-    });
+      console.log("Offer received — creating answer");
+      setStatus("Connecting...");
 
-    socket.on("answer", async ({ answer }) => {
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+        // flush any ICE candidates that arrived before offer
+        await flushCandidates(pc);
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit("answer", { roomId, answer });
+      } catch (err) {
+        console.error("Error handling offer:", err);
+      }
+    };
+
+    // ── Socket: first user receives the answer ────────────────────────────────
+    const handleAnswer = async ({ answer }) => {
+
+      const pc = pcRef.current;
+      if (!pc || !mounted) return;
+
+      console.log("Answer received");
+
+      try {
+        if (pc.signalingState === "have-local-offer") {
+          await pc.setRemoteDescription(new RTCSessionDescription(answer));
+          await flushCandidates(pc);
+        }
+      } catch (err) {
+        console.error("Error handling answer:", err);
+      }
+    };
+
+    // ── Socket: ICE candidate ─────────────────────────────────────────────────
+    const handleIceCandidate = async ({ candidate }) => {
+
+      if (!candidate || !mounted) return;
 
       const pc = pcRef.current;
       if (!pc) return;
 
-      console.log("Received answer");
+      const iceCandidate = new RTCIceCandidate(candidate);
 
-      await pc.setRemoteDescription(new RTCSessionDescription(answer));
-
-    });
-
-    socket.on("ice-candidate", async ({ candidate }) => {
-
-      const pc = pcRef.current;
-      if (!pc) return;
-
-      const ice = new RTCIceCandidate(candidate);
-
-      if (pc.remoteDescription) {
-        await pc.addIceCandidate(ice);
+      if (pc.remoteDescription && pc.remoteDescription.type) {
+        try {
+          await pc.addIceCandidate(iceCandidate);
+        } catch (err) {
+          console.warn("ICE candidate error:", err);
+        }
       } else {
-        pendingCandidates.current.push(ice);
+        // queue until remote description is set
+        pendingCandidates.current.push(iceCandidate);
       }
+    };
 
-    });
+    // ── Socket: other user left ───────────────────────────────────────────────
+    const handleUserLeft = () => {
+      setRemoteConnected(false);
+      setStatus("Other participant left");
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = null;
+      }
+    };
+
+    socket.on("start-call",    handleStartCall);
+    socket.on("offer",         handleOffer);
+    socket.on("answer",        handleAnswer);
+    socket.on("ice-candidate", handleIceCandidate);
+    socket.on("user-left",     handleUserLeft);
 
     return () => {
 
-      socket.off("start-call");
-      socket.off("offer");
-      socket.off("answer");
-      socket.off("ice-candidate");
+      mounted = false;
+
+      socket.off("start-call",    handleStartCall);
+      socket.off("offer",         handleOffer);
+      socket.off("answer",        handleAnswer);
+      socket.off("ice-candidate", handleIceCandidate);
+      socket.off("user-left",     handleUserLeft);
 
       if (pcRef.current) {
         pcRef.current.close();
@@ -201,27 +268,26 @@ const VideoCallMinimal = ({ roomId }) => {
       }
 
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current.getTracks().forEach(t => t.stop());
+        localStreamRef.current = null;
       }
 
     };
 
   }, [roomId]);
 
-  const toggleCamera = () => {
+  // ─── Controls ──────────────────────────────────────────────────────────────
 
+  const toggleCamera = () => {
     const track = localStreamRef.current?.getVideoTracks()[0];
     if (!track) return;
-
     track.enabled = !track.enabled;
     setCameraOn(track.enabled);
   };
 
   const toggleMic = () => {
-
     const track = localStreamRef.current?.getAudioTracks()[0];
     if (!track) return;
-
     track.enabled = !track.enabled;
     setMicOn(track.enabled);
   };
@@ -230,59 +296,43 @@ const VideoCallMinimal = ({ roomId }) => {
 
     if (!screenSharing) {
 
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: true
-      });
+      try {
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const screenTrack  = screenStream.getVideoTracks()[0];
 
-      const screenTrack = screenStream.getVideoTracks()[0];
+        const sender = pcRef.current?.getSenders().find(s => s.track?.kind === "video");
+        if (sender) await sender.replaceTrack(screenTrack);
 
-      const sender = pcRef.current
-        ?.getSenders()
-        .find(s => s.track?.kind === "video");
+        if (localVideoRef.current) localVideoRef.current.srcObject = screenStream;
 
-      if (sender) sender.replaceTrack(screenTrack);
-
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = screenStream;
+        screenTrack.onended = stopScreenShare;
+        setScreenSharing(true);
+      } catch (err) {
+        console.error("Screen share error:", err);
       }
 
-      screenTrack.onended = stopScreenShare;
-
-      setScreenSharing(true);
-
     } else {
-
       stopScreenShare();
-
     }
-
   };
 
-  const stopScreenShare = () => {
-
+  const stopScreenShare = async () => {
     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
-
-    const sender = pcRef.current
-      ?.getSenders()
-      .find(s => s.track?.kind === "video");
-
-    if (sender && videoTrack) {
-      sender.replaceTrack(videoTrack);
-    }
-
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = localStreamRef.current;
-    }
-
+    const sender     = pcRef.current?.getSenders().find(s => s.track?.kind === "video");
+    if (sender && videoTrack) await sender.replaceTrack(videoTrack);
+    if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
     setScreenSharing(false);
   };
 
-  return (
+  // ─── Render ────────────────────────────────────────────────────────────────
 
+  return (
     <div className="bg-black flex flex-col h-full">
 
-      <div className="flex-1 relative">
+      {/* Video area */}
+      <div className="flex-1 relative min-h-0">
 
+        {/* Remote video */}
         <video
           ref={remoteVideoRef}
           autoPlay
@@ -290,43 +340,58 @@ const VideoCallMinimal = ({ roomId }) => {
           className="w-full h-full object-cover"
         />
 
-        {!remoteStream && (
-          <div className="absolute inset-0 flex items-center justify-center text-white">
-            Connecting to participant...
+        {/* Overlay when not yet connected */}
+        {!remoteConnected && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-gray-900 bg-opacity-80 gap-3">
+            <div className="w-10 h-10 border-4 border-blue-400 border-t-transparent rounded-full animate-spin" />
+            <p className="text-sm">{status}</p>
           </div>
         )}
 
-        <video
-          ref={localVideoRef}
-          autoPlay
-          muted
-          playsInline
-          className="absolute bottom-5 right-5 w-56 rounded-lg border-2 border-white shadow-lg"
-        />
+        {/* Local video (picture-in-picture) */}
+        <div className="absolute bottom-4 right-4 w-48 h-36 rounded-lg overflow-hidden border-2 border-white shadow-xl">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            muted
+            playsInline
+            className="w-full h-full object-cover"
+          />
+          {!cameraOn && (
+            <div className="absolute inset-0 bg-gray-800 flex items-center justify-center text-white text-xs">
+              Camera Off
+            </div>
+          )}
+        </div>
 
       </div>
 
+      {/* Controls */}
       <div className="flex justify-center gap-4 p-4 bg-gray-900">
 
         <button
           onClick={toggleCamera}
-          className="bg-gray-700 px-4 py-2 rounded text-white"
+          className={`px-4 py-2 rounded text-white font-medium transition-colors ${
+            cameraOn ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"
+          }`}
         >
-          {cameraOn ? "Camera On" : "Camera Off"}
+          {cameraOn ? "🎥 Camera On" : "🚫 Camera Off"}
         </button>
 
         <button
           onClick={toggleMic}
-          className="bg-gray-700 px-4 py-2 rounded text-white"
+          className={`px-4 py-2 rounded text-white font-medium transition-colors ${
+            micOn ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"
+          }`}
         >
-          {micOn ? "Mic On" : "Mic Off"}
+          {micOn ? "🎤 Mic On" : "🔇 Mic Off"}
         </button>
 
         <button
           onClick={toggleScreenShare}
-          className="bg-blue-600 px-4 py-2 rounded text-white"
+          className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white font-medium transition-colors"
         >
-          {screenSharing ? "Stop Share" : "Share Screen"}
+          {screenSharing ? "🛑 Stop Share" : "🖥️ Share Screen"}
         </button>
 
       </div>
