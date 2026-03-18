@@ -32,6 +32,7 @@ const VideoCallMinimal = ({ roomId }) => {
 
   const pcRef              = useRef(null);
   const localStreamRef     = useRef(null);
+  const signalingQueue = useRef([]);
   const pendingCandidates  = useRef([]);
   const restartTimeout     = useRef(null);
 
@@ -161,7 +162,7 @@ const VideoCallMinimal = ({ roomId }) => {
     let mounted = true;
     
     // We use a mutable array in a ref to store signals that arrive before pcRef.current is ready
-    const signalingQueue = useRef([]);
+  
 
     // Helper to process the queue once PC is ready
     const processSignalingQueue = async (pc) => {

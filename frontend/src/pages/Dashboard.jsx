@@ -13,31 +13,24 @@ const Dashboard = () => {
   }, []);
 
   const fetchInterviews = async () => {
-
     try {
-
       const res = await API.get("/interviews");
-
       if (res.data) {
         setInterviews(res.data);
       }
-
     } catch (err) {
-
       console.log("Fetch interviews error:", err);
-
     }
-
   };
 
+  // ✅ FIXED (removed prompt)
   const createInterview = async () => {
-
-    const candidateEmail = window.prompt("Enter candidate email (required to create room):");
-    if (!candidateEmail) return;
 
     try {
 
-      const res = await API.post("/interviews/create-room", { candidateEmail, language: "javascript" });
+      const res = await API.post("/interviews/create-room", {
+        language: "javascript"   // ✅ removed candidateEmail
+      });
 
       const roomId = res?.data?.roomId;
 
@@ -52,6 +45,7 @@ const Dashboard = () => {
 
       console.log("Create interview failed:", err);
 
+      // fallback
       const fallbackRoom = Math.random().toString(36).substring(2, 10);
       navigate(`/room/${fallbackRoom}`);
 
@@ -60,51 +54,32 @@ const Dashboard = () => {
   };
 
   const joinRoom = (roomId) => {
-
     if (!roomId) return;
-
     navigate(`/room/${roomId}`);
-
   };
 
   const deleteRoom = async (id) => {
-
     try {
-
       await API.delete(`/interviews/${id}`);
-
       setInterviews(prev => prev.filter(i => i._id !== id));
-
     } catch (err) {
-
       console.log("Delete failed:", err);
       alert("Delete failed");
-
     }
-
   };
 
   const completeRoom = async (id) => {
-
     try {
-
       await API.patch(`/interviews/${id}/complete`);
-
       alert("Interview completed");
-
       fetchInterviews();
-
     } catch (err) {
-
       console.log("Complete failed:", err);
       alert("Complete failed");
-
     }
-
   };
 
   return (
-
     <>
       <Navbar />
 
@@ -127,11 +102,8 @@ const Dashboard = () => {
         </div>
 
         {interviews.length === 0 ? (
-
           <p>No interviews yet</p>
-
         ) : (
-
           <div style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))",
@@ -139,7 +111,6 @@ const Dashboard = () => {
           }}>
 
             {interviews.map((interview) => (
-
               <div
                 key={interview._id}
                 style={{
@@ -200,17 +171,14 @@ const Dashboard = () => {
                 </div>
 
               </div>
-
             ))}
 
           </div>
-
         )}
 
       </div>
     </>
   );
-
 };
 
 export default Dashboard;
