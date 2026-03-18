@@ -29,28 +29,22 @@ const InterviewRoom = () => {
   // ==============================
 
   useEffect(() => {
-
     if (!roomId || !user) return;
-
     setRoomLoading(false);
-
   }, [roomId, user]);
 
   // ==============================
   // SOCKET CONNECTION
   // ==============================
 
-  // ── Connect socket and join room once ──────────────────────────────────────
   useEffect(() => {
 
     if (!user || !roomId) return;
 
-    // Connect if not already connected (socket has autoConnect: false)
     if (!socket.connected) {
       socket.connect();
     }
 
-    // Wait for connection then emit join-room exactly once
     const doJoin = () => {
       if (!hasJoinedRef.current) {
         socket.emit("join-room", {
@@ -94,23 +88,31 @@ const InterviewRoom = () => {
 
     const handleInterviewEnded = () => {
       alert("Interview finished");
-      socket.disconnect();
+
+      // ✅ FIX: clean exit
+      if (socket.connected) socket.disconnect();
+
       navigate("/dashboard");
     };
 
-    socket.on("room-joined",      handleRoomJoined);
-    socket.on("user-joined",      handleUserJoined);
-    socket.on("user-left",        handleUserLeft);
-    socket.on("chat-message",     handleChat);
-    socket.on("interview-ended",  handleInterviewEnded);
+    socket.on("room-joined", handleRoomJoined);
+    socket.on("user-joined", handleUserJoined);
+    socket.on("user-left", handleUserLeft);
+    socket.on("chat-message", handleChat);
+    socket.on("interview-ended", handleInterviewEnded);
 
     return () => {
-      socket.off("connect",        doJoin);
-      socket.off("room-joined",    handleRoomJoined);
-      socket.off("user-joined",    handleUserJoined);
-      socket.off("user-left",      handleUserLeft);
-      socket.off("chat-message",   handleChat);
-      socket.off("interview-ended",handleInterviewEnded);
+      socket.off("connect", doJoin);
+      socket.off("room-joined", handleRoomJoined);
+      socket.off("user-joined", handleUserJoined);
+      socket.off("user-left", handleUserLeft);
+      socket.off("chat-message", handleChat);
+      socket.off("interview-ended", handleInterviewEnded);
+
+      // ✅ FIX: prevent ghost users
+      if (socket.connected) {
+        socket.disconnect();
+      }
     };
 
   }, [roomId, user, navigate]);
@@ -120,7 +122,6 @@ const InterviewRoom = () => {
   // ==============================
 
   const sendMessage = () => {
-
     if (!messageInput.trim()) return;
 
     socket.emit("chat-message", {
@@ -129,7 +130,6 @@ const InterviewRoom = () => {
     });
 
     setMessageInput("");
-
   };
 
   // ==============================
@@ -137,27 +137,37 @@ const InterviewRoom = () => {
   // ==============================
 
   const copyInviteLink = () => {
-
     navigator.clipboard.writeText(inviteLink);
-
     setCopied(true);
-
     setTimeout(() => setCopied(false), 2000);
-
   };
 
   // ==============================
   // END INTERVIEW / LEAVE ROOM
   // ==============================
 
-  const handleEndInterview = async () => {
+  const handleEndInterview = () => {
+
     if (user?.role === "interviewer") {
-      // Interviewer ends the session for everyone
+
+      // ✅ interviewer ends for all
       socket.emit("end-interview", { roomId });
+
+      // ✅ also leave immediately
+      if (socket.connected) socket.disconnect();
+
+      navigate("/dashboard");
+
     } else {
-      // Candidate simply leaves
+
+      // ✅ candidate leaves properly
+      socket.emit("leave-room", { roomId });
+
+      if (socket.connected) socket.disconnect();
+
       navigate("/dashboard");
     }
+
   };
 
   // ==============================
@@ -165,13 +175,11 @@ const InterviewRoom = () => {
   // ==============================
 
   if (roomLoading) {
-
     return (
       <div className="h-screen bg-gray-900 flex items-center justify-center">
         <p className="text-white text-lg">Loading interview room...</p>
       </div>
     );
-
   }
 
   return (
@@ -192,7 +200,6 @@ const InterviewRoom = () => {
           <Timer />
 
           <div className="text-sm">
-
             <p className="font-semibold">
               {roomUsers.length}/2 participants
             </p>
@@ -202,18 +209,15 @@ const InterviewRoom = () => {
                 {u.userName}
               </span>
             ))}
-
           </div>
 
           {roomUsers.length < 2 && (
-
             <button
               onClick={() => setShowInviteModal(true)}
               className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
             >
               Invite Candidate
             </button>
-
           )}
 
           <button
@@ -250,16 +254,12 @@ const InterviewRoom = () => {
           <div className="flex-1 overflow-y-auto p-3 space-y-2 text-white">
 
             {messages.map((msg, i) => (
-
               <div key={i} className="text-sm">
-
                 <span className="font-semibold text-blue-400">
                   {msg.senderName || "User"}:
                 </span>{" "}
                 {msg.message}
-
               </div>
-
             ))}
 
           </div>
@@ -329,9 +329,7 @@ const InterviewRoom = () => {
       )}
 
     </div>
-
   );
-
 };
 
 export default InterviewRoom;
