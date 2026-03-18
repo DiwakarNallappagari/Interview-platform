@@ -161,12 +161,18 @@ const VideoCallMinimal = ({ roomId }) => {
   useEffect(() => {
   let mounted = true;
 
-  // ✅ ADD HERE
   if (!socket.connected) {
     socket.connect();
   }
 
-  socket.emit("join-room", { roomId });
+  // ✅ FIXED JOIN ROOM
+  socket.emit("join-room", {
+    roomId,
+    userId: "user-" + Math.random().toString(36).slice(2),
+    userName: "User " + Math.floor(Math.random() * 1000)
+  });
+
+  
 
   // rest of your code...
     
