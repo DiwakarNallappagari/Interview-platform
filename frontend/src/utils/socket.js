@@ -4,17 +4,13 @@ const SOCKET_URL =
   import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
 
 const socket = io(SOCKET_URL, {
-  // Start with polling so Render's proxy can establish the connection,
-  // then upgrade to WebSocket automatically
-  transports: ["polling", "websocket"],
-  upgrade: true,
+  transports: ["websocket"], // 🔥 force websocket (more stable)
   reconnection: true,
   reconnectionAttempts: Infinity,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 5000,
-  timeout: 30000,         // longer timeout for Render cold-start
-  autoConnect: false,     // connect manually from InterviewRoom
-  withCredentials: true,  // required for CORS with credentials
+  timeout: 30000,
+  withCredentials: true,
 });
 
 socket.on("connect", () => {

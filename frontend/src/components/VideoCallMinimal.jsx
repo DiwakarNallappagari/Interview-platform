@@ -159,7 +159,16 @@ const VideoCallMinimal = ({ roomId }) => {
 
   // ─── Main useEffect ───────────────────────────────────────────────────────
   useEffect(() => {
-    let mounted = true;
+  let mounted = true;
+
+  // ✅ ADD HERE
+  if (!socket.connected) {
+    socket.connect();
+  }
+
+  socket.emit("join-room", { roomId });
+
+  // rest of your code...
     
     // We use a mutable array in a ref to store signals that arrive before pcRef.current is ready
   
