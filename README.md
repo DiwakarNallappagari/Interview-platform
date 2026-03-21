@@ -6,7 +6,7 @@ A full-stack MERN application for conducting technical interviews with **real-ti
 
 ## 🚀 Live Demo
 
-👉 https://interviewplatform-teal.vercel.app
+👉https://interview-platform-delta-gilt.vercel.app
 
 ---
 
